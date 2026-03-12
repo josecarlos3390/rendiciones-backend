@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { HanaService } from '../../database/hana.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { RendU } from './interfaces/rend-u.interface';
 import * as bcrypt from 'bcryptjs';
 
 const SAFE_COLS = `
@@ -14,28 +15,6 @@ const SAFE_COLS = `
   "U_GenDocPre", "U_FECHAEXPIRACION", "U_FIJARNR",
   "U_NR1", "U_NR2", "U_NR3", "U_NR4", "U_NR5", "U_FIJARSALDO"
 `;
-
-export interface RendU {
-  U_IdU:             number;
-  U_Login:           string;
-  U_NomUser:         string;
-  U_NomSup:          string;
-  U_SuperUser:       number;
-  U_Estado:          string;
-  U_AppRend:         string;
-  U_AppConf:         string;
-  U_AppExtB:         string;
-  U_AppUpLA:         string;
-  U_GenDocPre:       string;
-  U_FECHAEXPIRACION: string;
-  U_FIJARNR:         string;
-  U_NR1:             string;
-  U_NR2:             string;
-  U_NR3:             string;
-  U_NR4:             string;
-  U_NR5:             string;
-  U_FIJARSALDO:      string;
-}
 
 @Injectable()
 export class UsersService {
@@ -167,13 +146,14 @@ export class UsersService {
   }
 
   async updatePassword(userId: number, currentPassword: string, newPassword: string) {
-    const rows = await this.hanaService.query<{ U_Pass: string }>(
+    const rows = await this.hanaService.query<Record<string, string>>(
       `SELECT "U_Pass" FROM ${this.DB} WHERE "U_IdU" = ?`,
       [userId],
     );
     if (!rows.length) throw new NotFoundException('Usuario no encontrado');
 
-    const pass = (rows[0] as any).U_Pass ?? (rows[0] as any).U_PASS;
+    // HanaService.col() normaliza el case del nombre de columna según la versión del driver
+    const pass = HanaService.col(rows[0], 'U_Pass');
     const isValid = await bcrypt.compare(currentPassword, pass);
     if (!isValid) throw new BadRequestException('Contrasena actual incorrecta');
 

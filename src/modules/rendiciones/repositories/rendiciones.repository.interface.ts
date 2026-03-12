@@ -6,7 +6,7 @@
 export interface IRendicionesRepository {
   findAll(): Promise<any[]>;
   findOne(id: number): Promise<any | null>;
-  create(data: CreateRendicionData, userId: number): Promise<{ id?: any }>;
+  create(data: CreateRendicionData, userId: number): Promise<any>;
   update(id: number, data: Partial<CreateRendicionData>): Promise<{ affected: number }>;
   remove(id: number): Promise<{ affected: number }>;
 }

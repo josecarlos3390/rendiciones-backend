@@ -7,6 +7,13 @@ import { DatabaseModule }    from './database/database.module';
 import { AuthModule }        from './auth/auth.module';
 import { UsersModule }       from './modules/users/users.module';
 import { RendicionesModule } from './modules/rendiciones/rendiciones.module';
+import { PerfilesModule }      from './modules/perfiles/perfiles.module';
+import { CuentasListaModule }    from './modules/cuentas-lista/cuentas-lista.module';
+import { CuentasCabeceraModule } from './modules/cuentas-cabecera/cuentas-cabecera.module';
+import { PermisosModule }         from './modules/permisos/permisos.module';
+import { DocumentosModule }       from './modules/documentos/documentos.module';
+import { RendMModule }            from './modules/rend-m/rend-m.module';
+import { RendDModule }            from './modules/rend-d/rend-d.module';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard }   from './common/guards/roles.guard';
@@ -28,6 +35,13 @@ import { loggerConfig } from './config/logger.config';
     AuthModule,
     UsersModule,
     RendicionesModule,
+    PerfilesModule,
+    CuentasListaModule,
+    CuentasCabeceraModule,
+    PermisosModule,
+    DocumentosModule,
+    RendMModule,
+    RendDModule,
   ],
   providers: [
     // JWT aplicado globalmente — usar @Public() para excluir rutas

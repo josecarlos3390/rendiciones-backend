@@ -31,11 +31,6 @@ export class AuthService {
     return superUser === 1 ? 'ADMIN' : 'USER';
   }
 
-  // HANA puede devolver columnas en mayúsculas según la versión del driver
-  private col(row: any, name: string): any {
-    return row[name] ?? row[name.toUpperCase()] ?? row[name.toLowerCase()];
-  }
-
   async login(dto: LoginDto) {
     const { username, password } = dto;
 
@@ -57,15 +52,17 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales invalidas');
     }
 
-    const pass      = this.col(user, 'U_Pass');
-    const estado    = this.col(user, 'U_Estado');
-    const expDate   = this.col(user, 'U_FECHAEXPIRACION');
-    const idU       = this.col(user, 'U_IdU');
-    const login     = this.col(user, 'U_Login');
-    const nomUser   = this.col(user, 'U_NomUser')   ?? '';
-    const superUser = this.col(user, 'U_SuperUser') ?? 0;
-    const appRend   = this.col(user, 'U_AppRend')   ?? 'N';
-    const appConf   = this.col(user, 'U_AppConf')   ?? 'N';
+    const col = HanaService.col.bind(null, user);
+
+    const pass      = col('U_Pass');
+    const estado    = col('U_Estado');
+    const expDate   = col('U_FECHAEXPIRACION');
+    const idU       = col('U_IdU');
+    const login     = col('U_Login');
+    const nomUser   = col('U_NomUser')   ?? '';
+    const superUser = col('U_SuperUser') ?? 0;
+    const appRend   = col('U_AppRend')   ?? 'N';
+    const appConf   = col('U_AppConf')   ?? 'N';
 
     this.logger.debug(`hash encontrado: ${pass}`);
 
@@ -100,7 +97,7 @@ export class AuthService {
   async refreshToken(userId: number) {
     const rows = await this.hanaService.query<any>(
       `SELECT "U_IdU", "U_Login", "U_SuperUser", "U_NomUser",
-              "U_Estado", "U_AppRend", "U_AppConf"
+              "U_Estado", "U_AppRend", "U_AppConf", "U_FECHAEXPIRACION"
        FROM ${this.DB}
        WHERE "U_IdU" = ?`,
       [userId],
@@ -109,15 +106,19 @@ export class AuthService {
     const user = rows[0];
     if (!user) throw new UnauthorizedException('Usuario no valido');
 
-    const estado    = this.col(user, 'U_Estado');
-    const idU       = this.col(user, 'U_IdU');
-    const login     = this.col(user, 'U_Login');
-    const nomUser   = this.col(user, 'U_NomUser')   ?? '';
-    const superUser = this.col(user, 'U_SuperUser') ?? 0;
-    const appRend   = this.col(user, 'U_AppRend')   ?? 'N';
-    const appConf   = this.col(user, 'U_AppConf')   ?? 'N';
+    const col = HanaService.col.bind(null, user);
 
-    if (estado !== 'A') throw new UnauthorizedException('Usuario no valido');
+    const estado    = col('U_Estado');
+    const expDate   = col('U_FECHAEXPIRACION');
+    const idU       = col('U_IdU');
+    const login     = col('U_Login');
+    const nomUser   = col('U_NomUser')   ?? '';
+    const superUser = col('U_SuperUser') ?? 0;
+    const appRend   = col('U_AppRend')   ?? 'N';
+    const appConf   = col('U_AppConf')   ?? 'N';
+
+    if (estado !== 'A') throw new UnauthorizedException('Tu cuenta esta inactiva. Contacta al administrador.');
+    if (new Date(expDate) < new Date()) throw new UnauthorizedException('Tu cuenta ha expirado. Contacta al administrador.');
 
     const payload: JwtPayload = {
       sub: idU, username: login, name: nomUser,

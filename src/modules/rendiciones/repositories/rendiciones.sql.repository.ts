@@ -21,7 +21,7 @@ export class RendicionesSqlRepository implements IRendicionesRepository {
     throw new Error('SQL Repository no implementado aun.');
   }
 
-  async create(data: CreateRendicionData, userId: number): Promise<{ id?: any }> {
+  async create(data: CreateRendicionData, userId: number): Promise<any> {
     throw new Error('SQL Repository no implementado aun.');
   }
 

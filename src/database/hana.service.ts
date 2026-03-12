@@ -91,6 +91,17 @@ export class HanaService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  /**
+   * Normaliza el acceso a columnas de filas HANA.
+   * El driver puede devolver nombres en la capitalización original, en mayúsculas
+   * o en minúsculas dependiendo de la versión. Este helper prueba las tres variantes.
+   *
+   * Uso:  HanaService.col(row, 'U_Pass')
+   */
+  static col(row: any, name: string): any {
+    return row[name] ?? row[name.toUpperCase()] ?? row[name.toLowerCase()];
+  }
+
   /** Stored Procedures */
   async callProcedure(name: string, params: any[] = []): Promise<any> {
     return new Promise((resolve, reject) => {

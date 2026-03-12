@@ -36,26 +36,31 @@ export class RendicionesHanaRepository implements IRendicionesRepository {
     return rows[0] ?? null;
   }
 
-  async create(data: CreateRendicionData, userId: number): Promise<{ id?: any }> {
-    // En HANA se puede usar CURRENT_TIMESTAMP directamente
+  async create(data: CreateRendicionData, userId: number): Promise<any> {
     await this.hanaService.execute(
       `INSERT INTO "${this.schema}"."RENDICIONES"
          (DESCRIPCION, MONTO, FECHA, OBSERVACIONES, USUARIO_ID, ESTADO, FECHA_CREACION)
        VALUES (?, ?, ?, ?, ?, 'PENDIENTE', CURRENT_TIMESTAMP)`,
       [data.descripcion, data.monto, data.fecha, data.observaciones ?? null, userId],
     );
-    // HANA no retorna LAST_INSERT_ID directamente; ajustar si la tabla tiene IDENTITY
-    return {};
+
+    // CURRENT_IDENTITY_VALUE() retorna el último ID generado por una columna
+    // GENERATED AS IDENTITY en la misma conexión — equivalente a LAST_INSERT_ID en MySQL.
+    const rows = await this.hanaService.query<any>(
+      `SELECT CURRENT_IDENTITY_VALUE() AS "ID" FROM DUMMY`,
+    );
+    const newId = HanaService.col(rows[0], 'ID');
+    return this.findOne(newId);
   }
 
   async update(id: number, data: Partial<CreateRendicionData>): Promise<{ affected: number }> {
     const setParts: string[] = [];
     const params:   any[]    = [];
 
-    if (data.descripcion  !== undefined) { setParts.push('DESCRIPCION = ?');   params.push(data.descripcion); }
-    if (data.monto        !== undefined) { setParts.push('MONTO = ?');          params.push(data.monto); }
-    if (data.fecha        !== undefined) { setParts.push('FECHA = ?');          params.push(data.fecha); }
-    if (data.observaciones !== undefined) { setParts.push('OBSERVACIONES = ?'); params.push(data.observaciones); }
+    if (data.descripcion   !== undefined) { setParts.push('DESCRIPCION = ?');   params.push(data.descripcion); }
+    if (data.monto         !== undefined) { setParts.push('MONTO = ?');          params.push(data.monto); }
+    if (data.fecha         !== undefined) { setParts.push('FECHA = ?');          params.push(data.fecha); }
+    if (data.observaciones !== undefined) { setParts.push('OBSERVACIONES = ?');  params.push(data.observaciones); }
 
     if (!setParts.length) return { affected: 0 };
 
