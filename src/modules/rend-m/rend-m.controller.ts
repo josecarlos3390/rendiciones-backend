@@ -7,12 +7,22 @@ import { RendMService }     from './rend-m.service';
 import { CreateRendMDto }   from './dto/create-rend-m.dto';
 import { UpdateRendMDto }   from './dto/update-rend-m.dto';
 import { Roles }            from '../../auth/decorators/roles.decorator';
+import { PerfilesService }  from '../perfiles/perfiles.service';
+
+/** Etiqueta legible para el campo U_Trabaja del perfil */
+const TRABAJA_LABEL: Record<string, string> = {
+  '0': 'Moneda Local(BS)',
+  '1': 'USD',
+};
 
 @ApiTags('Rendiciones-M')
 @ApiBearerAuth()
 @Controller('rend-m')
 export class RendMController {
-  constructor(private readonly rendMService: RendMService) {}
+  constructor(
+    private readonly rendMService:   RendMService,
+    private readonly perfilesService: PerfilesService,
+  ) {}
 
   @Get()
   @Roles('ADMIN', 'USER')
@@ -35,13 +45,17 @@ export class RendMController {
   @Roles('ADMIN', 'USER')
   @ApiOperation({ summary: 'Crear cabecera de rendición' })
   @ApiResponse({ status: 201, description: 'Cabecera creada' })
-  create(@Body() dto: CreateRendMDto, @Req() req: any) {
+  async create(@Body() dto: CreateRendMDto, @Req() req: any) {
+    // Resolver el nombre completo del perfil: "<NombrePerfil>-<Trabaja label>"
+    const perfil = await this.perfilesService.findOne(dto.idPerfil);
+    const trabajaLabel = TRABAJA_LABEL[perfil.U_Trabaja] ?? perfil.U_Trabaja;
+    const nombrePerfil = `${perfil.U_NombrePerfil}-${trabajaLabel}`;
+
     return this.rendMService.create(
       dto,
-      String(req.user.sub),   // idUsuario  (U_IdUsuario es NVARCHAR en REND_M)
-      req.user.name,           // nomUsuario
-      dto.idPerfil.toString(), // nombrePerfil se resuelve en el repositorio con el idPerfil;
-                               // si querés el nombre completo, pasalo en el DTO o consultá REND_PERFIL
+      String(req.user.sub),
+      req.user.name,
+      nombrePerfil,
     );
   }
 

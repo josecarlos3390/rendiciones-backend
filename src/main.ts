@@ -55,6 +55,7 @@ async function bootstrap() {
             !origin ||
             /^http:\/\/localhost(:\d+)?$/.test(origin) ||
             /^http:\/\/192\.168\.\d+\.\d+(:\d+)?$/.test(origin) ||
+            /^http:\/\/172\.\d+\.\d+\.\d+(:\d+)?$/.test(origin) ||
             /^http:\/\/10\.\d+\.\d+\.\d+(:\d+)?$/.test(origin);
           cb(null, allowed);
         },

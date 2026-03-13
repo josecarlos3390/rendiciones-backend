@@ -37,7 +37,7 @@ export class AuthService {
 
     const rows = await this.hanaService.query<any>(
       `SELECT "U_IdU", "U_Login", "U_Pass", "U_SuperUser", "U_NomUser",
-              "U_Estado", "U_AppRend", "U_AppConf", "U_FECHAEXPIRACION"
+              "U_Estado", "U_AppRend", "U_AppConf", "U_FIJARSALDO", "U_FECHAEXPIRACION"
        FROM ${this.DB}
        WHERE LOWER("U_Login") = ?`,
       [username],
@@ -60,12 +60,11 @@ export class AuthService {
     const expDate   = col('U_FECHAEXPIRACION');
     const idU       = col('U_IdU');
     const login     = col('U_Login');
-    const nomUser   = col('U_NomUser')   ?? '';
-    const superUser = col('U_SuperUser') ?? 0;
-    const appRend   = col('U_AppRend')   ?? 'N';
-    const appConf   = col('U_AppConf')   ?? 'N';
-
-    this.logger.debug(`hash encontrado: ${pass}`);
+    const nomUser    = col('U_NomUser')     ?? '';
+    const superUser  = col('U_SuperUser')   ?? 0;
+    const appRend    = col('U_AppRend')     ?? 'N';
+    const appConf    = col('U_AppConf')     ?? 'N';
+    const fijarSaldo = col('U_FIJARSALDO')  ?? '0';
 
     const isValid = await bcrypt.compare(password, pass ?? '');
     this.logger.debug(`bcrypt.compare: ${isValid}`);
@@ -86,19 +85,19 @@ export class AuthService {
 
     const payload: JwtPayload = {
       sub: idU, username: login, name: nomUser,
-      role: this.toRole(superUser), appRend, appConf,
+      role: this.toRole(superUser), appRend, appConf, fijarSaldo,
     };
 
     return {
       access_token: this.jwtService.sign(payload),
-      user: { id: idU, username: login, name: nomUser, role: payload.role, appRend, appConf },
+      user: { id: idU, username: login, name: nomUser, role: payload.role, appRend, appConf, fijarSaldo },
     };
   }
 
   async refreshToken(userId: number) {
     const rows = await this.hanaService.query<any>(
       `SELECT "U_IdU", "U_Login", "U_SuperUser", "U_NomUser",
-              "U_Estado", "U_AppRend", "U_AppConf", "U_FECHAEXPIRACION"
+              "U_Estado", "U_AppRend", "U_AppConf", "U_FIJARSALDO", "U_FECHAEXPIRACION"
        FROM ${this.DB}
        WHERE "U_IdU" = ?`,
       [userId],
@@ -113,17 +112,18 @@ export class AuthService {
     const expDate   = col('U_FECHAEXPIRACION');
     const idU       = col('U_IdU');
     const login     = col('U_Login');
-    const nomUser   = col('U_NomUser')   ?? '';
-    const superUser = col('U_SuperUser') ?? 0;
-    const appRend   = col('U_AppRend')   ?? 'N';
-    const appConf   = col('U_AppConf')   ?? 'N';
+    const nomUser    = col('U_NomUser')     ?? '';
+    const superUser  = col('U_SuperUser')   ?? 0;
+    const appRend    = col('U_AppRend')     ?? 'N';
+    const appConf    = col('U_AppConf')     ?? 'N';
+    const fijarSaldo = col('U_FIJARSALDO')  ?? '0';
 
     if (estado !== '1') throw new UnauthorizedException('Tu cuenta esta inactiva. Contacta al administrador.');
     if (new Date(expDate) < new Date()) throw new UnauthorizedException('Tu cuenta ha expirado. Contacta al administrador.');
 
     const payload: JwtPayload = {
       sub: idU, username: login, name: nomUser,
-      role: this.toRole(superUser), appRend, appConf,
+      role: this.toRole(superUser), appRend, appConf, fijarSaldo,
     };
 
     return { access_token: this.jwtService.sign(payload) };

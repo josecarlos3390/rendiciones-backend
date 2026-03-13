@@ -5,6 +5,7 @@ export interface JwtPayload {
   role:       string;   // 'ADMIN' | 'USER'  (derivado de U_SuperUser)
   appRend:    string;   // REND_U.U_AppRend  — acceso a rendiciones
   appConf:    string;   // REND_U.U_AppConf  — acceso a configuracion
+  fijarSaldo: string;   // REND_U.U_FIJARSALDO — '1'=debe fijar monto, '0'=opcional
   iat?:       number;
   exp?:       number;
 }

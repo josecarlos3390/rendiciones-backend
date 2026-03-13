@@ -63,22 +63,30 @@ export class RendMHanaRepository implements IRendMRepository {
   ): Promise<RendM | null> {
     const now = new Date().toISOString();
 
+    // REND_M no tiene columna IDENTITY — generar el ID manualmente con MAX+1
+    const idRows = await this.hanaService.query<Record<string, number>>(
+      `SELECT COALESCE(MAX("U_IdRendicion"), 0) + 1 AS "newId" FROM ${this.DB}`,
+    );
+    const newId = HanaService.col(idRows[0], 'newId');
+
     await this.hanaService.execute(
       `INSERT INTO ${this.DB}
-         ("U_IdUsuario", "U_IdPerfil", "U_NomUsuario", "U_NombrePerfil",
+         ("U_IdRendicion",
+          "U_IdUsuario", "U_IdPerfil", "U_NomUsuario", "U_NombrePerfil",
           "U_Preliminar", "U_Estado",
           "U_Cuenta", "U_NombreCuenta", "U_Empleado", "U_NombreEmpleado",
           "U_FechaIni", "U_FechaFinal", "U_Monto", "U_Objetivo",
           "U_FechaCreacion", "U_FechaMod",
           "U_AUXILIAR1", "U_AUXILIAR2", "U_AUXILIAR3")
-       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        newId,
         idUsuario,
         dto.idPerfil,
         nomUsuario,
         nombrePerfil,
-        dto.preliminar    ?? '',
-        // Estado 0 = ABIERTO al crear
+        '-1',               // U_Preliminar: -1 por defecto hasta generar doc preliminar
+        // U_Estado 1 = ABIERTO al crear
         dto.cuenta,
         dto.nombreCuenta,
         dto.empleado,
@@ -95,10 +103,6 @@ export class RendMHanaRepository implements IRendMRepository {
       ],
     );
 
-    const idRows = await this.hanaService.query<Record<string, number>>(
-      `SELECT CURRENT_IDENTITY_VALUE() AS "newId" FROM DUMMY`,
-    );
-    const newId = HanaService.col(idRows[0], 'newId');
     this.logger.log(`REND_M creada: ID ${newId} — usuario ${idUsuario}`);
     return this.findOne(newId);
   }

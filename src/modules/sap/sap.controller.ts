@@ -51,13 +51,19 @@ export class SapController {
   }
 
   /**
-   * GET /api/v1/sap/empleados?filtro=EL
-   * Devuelve empleados (BusinessPartners) cuyo CardCode empieza con el filtro
-   * configurado en el perfil (U_EMP_TEXTO).
+   * GET /api/v1/sap/empleados?car=EMPIEZA&filtro=EL
+   *
+   * Devuelve BusinessPartners de SAP filtrados según la característica del perfil (U_EMP_CAR):
+   *   - EMPIEZA  → CardCode que empieza con el valor de `filtro`  (startswith)
+   *   - TERMINA  → CardCode que termina con el valor de `filtro`   (endswith)
+   *   - NOTIENE  → lista vacía, sin consultar SAP
    */
   @Get('empleados')
-  @ApiOperation({ summary: 'Busca empleados SAP filtrados por prefijo de CardCode' })
-  getEmpleados(@Query('filtro') filtro: string) {
-    return this.sapService.getEmpleados(filtro ?? '');
+  @ApiOperation({ summary: 'Busca empleados SAP filtrados según la característica del perfil (U_EMP_CAR)' })
+  getEmpleados(
+    @Query('car')    car:    string,
+    @Query('filtro') filtro: string,
+  ) {
+    return this.sapService.getEmpleados(car ?? 'EMPIEZA', filtro ?? '');
   }
 }

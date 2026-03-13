@@ -6,6 +6,8 @@ export default registerAs('app', () => ({
   aplicaCuentaNormaReparto: process.env.APLICA_CUENTA_NORMA_REPARTO === '1',
   aplicaLectorQR: process.env.APLICA_LECTOR_QR === '1',
   aplicaNroOT: process.env.APLICA_NRO_OT === '1',
+  /** 'LOCAL' = moneda local es BS, 'SISTEMA' = moneda local es USD */
+  bolivianosEs: (process.env.BolivianosEs ?? 'LOCAL').toUpperCase() as 'LOCAL' | 'SISTEMA',
   password: {
     minLength: parseInt(process.env.PASSWORD_MIN_LENGTH, 10) || 8,
     maxIntentos: parseInt(process.env.PASSWORD_MAX_INTENTOS, 10) || 10,

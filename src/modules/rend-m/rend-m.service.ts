@@ -39,12 +39,12 @@ export class RendMService {
   async update(id: number, dto: UpdateRendMDto, role: string, idUsuario: string) {
     const row = await this.findOne(id);
 
-    // USER solo puede editar sus propias rendiciones en estado ABIERTO (0)
+    // USER solo puede editar sus propias rendiciones en estado ABIERTO (1)
     if (role !== 'ADMIN') {
       if (row.U_IdUsuario !== idUsuario) {
         throw new ForbiddenException('No puedes editar rendiciones de otro usuario');
       }
-      if (row.U_Estado !== 0) {
+      if (row.U_Estado !== 1) {
         throw new ForbiddenException('Solo se pueden editar rendiciones en estado ABIERTO');
       }
     }
@@ -60,7 +60,7 @@ export class RendMService {
       if (row.U_IdUsuario !== idUsuario) {
         throw new ForbiddenException('No puedes eliminar rendiciones de otro usuario');
       }
-      if (row.U_Estado !== 0) {
+      if (row.U_Estado !== 1) {
         throw new ForbiddenException('Solo se pueden eliminar rendiciones en estado ABIERTO');
       }
     }

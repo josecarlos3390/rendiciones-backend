@@ -55,7 +55,6 @@ interface SLAccount {
 interface SLBusinessPartner {
   CardCode: string;
   CardName: string;
-  CardType: string;
 }
 
 export interface EmpleadoDto {
@@ -178,6 +177,50 @@ export class SapService {
     }
   }
 
+  // ── Empleados (BusinessPartners filtrados por perfil) ─────────────────────
+
+  /**
+   * Retorna empleados desde SAP SL según la característica configurada en el perfil.
+   *
+   * @param car    - Característica del perfil (U_EMP_CAR): 'EMPIEZA' | 'TERMINA' | 'NOTIENE'
+   * @param filtro - Texto del perfil (U_EMP_TEXTO), p.ej. 'EL'
+   *
+   * Lógica:
+   *  - NOTIENE  → retorna [] sin consultar SAP
+   *  - EMPIEZA  → OData startswith(CardCode, 'XX')
+   *  - TERMINA  → OData endswith(CardCode, 'XX')  (soportado en SAP SL según doc oficial)
+   *
+   * NOTA: CardType 'cEmployee' no existe en BoCardTypes de SAP SL.
+   * Los empleados se identifican únicamente por el prefijo/sufijo de CardCode
+   * configurado en el perfil (U_EMP_TEXTO).
+   */
+  async getEmpleados(car: string, filtro: string): Promise<EmpleadoDto[]> {
+    const carUpper = (car ?? '').toUpperCase();
+
+    // NOTIENE o sin filtro → lista vacía, sin consultar SAP
+    if (carUpper === 'NOTIENE' || !filtro) return [];
+
+    try {
+      const cardCodeFilter = carUpper === 'TERMINA'
+        ? `endswith(CardCode, '${filtro}')`
+        : `startswith(CardCode, '${filtro}')`;
+
+      const endpoint = `BusinessPartners?$select=CardCode,CardName&$filter=${encodeURIComponent(cardCodeFilter)}&$top=500`;
+      const data     = await this.slGet<{ value: SLBusinessPartner[] }>(endpoint);
+      return (data.value ?? []).map(bp => ({
+        cardCode: bp.CardCode,
+        cardName: bp.CardName,
+      }));
+
+    } catch (err: any) {
+      this.session = null;
+      this.logger.error('Error getEmpleados SAP SL:', err?.message ?? err);
+      throw new InternalServerErrorException(
+        `SAP BusinessPartners empleados: ${err?.message ?? 'Error desconocido'}`,
+      );
+    }
+  }
+
   // ── Sesión: POST /Login → B1SESSION cookie ────────────────────────────────
 
   private async getSession(): Promise<string> {
@@ -251,24 +294,6 @@ export class SapService {
     const rules = data.value ?? [];
     this.rulesCache = { data: rules, expiresAt: Date.now() + this.CACHE_TTL_MS };
     return rules;
-  }
-
-  async getEmpleados(filtro: string): Promise<EmpleadoDto[]> {
-    try {
-      const filter   = `startswith(CardCode, '${filtro}') and CardType eq 'cEmployee'`;
-      const endpoint = `BusinessPartners?$select=CardCode,CardName,CardType&$filter=${encodeURIComponent(filter)}&$top=500`;
-      const data     = await this.slGet<{ value: SLBusinessPartner[] }>(endpoint);
-      return (data.value ?? []).map(bp => ({
-        cardCode: bp.CardCode,
-        cardName: bp.CardName,
-      }));
-    } catch (err: any) {
-      this.session = null;
-      this.logger.error('Error getEmpleados SAP SL:', err?.message ?? err);
-      throw new InternalServerErrorException(
-        `SAP BusinessPartners empleados: ${err?.message ?? 'Error desconocido'}`,
-      );
-    }
   }
 
   // ── GET con cookie de sesión ──────────────────────────────────────────────

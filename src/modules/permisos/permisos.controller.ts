@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Delete,
-  Body, Param, ParseIntPipe,
+  Body, Param, ParseIntPipe, Req,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { PermisosService } from './permisos.service';
@@ -18,6 +18,18 @@ export class PermisosController {
   @ApiOperation({ summary: 'Listar todos los usuarios activos' })
   findUsuarios() {
     return this.service.findUsuarios();
+  }
+
+  /**
+   * GET /api/v1/permisos/mis-perfiles
+   * Devuelve los perfiles asignados al usuario autenticado (cualquier rol).
+   * Usa el sub del JWT para determinar el usuario — no requiere pasar el ID en la URL.
+   */
+  @Get('mis-perfiles')
+  @Roles('ADMIN', 'USER')
+  @ApiOperation({ summary: 'Perfiles asignados al usuario autenticado' })
+  getMisPerfiles(@Req() req: any) {
+    return this.service.findByUsuario(req.user.sub);
   }
 
   @Get('usuario/:idUsuario')

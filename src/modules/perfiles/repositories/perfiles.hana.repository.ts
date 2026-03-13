@@ -45,14 +45,21 @@ export class PerfilesHanaRepository implements IPerfilesRepository {
   }
 
   async create(dto: CreatePerfilDto): Promise<Perfil | null> {
+    // Generar ID secuencial (no es IDENTITY — hay que calcularlo)
+    const maxRows = await this.hanaService.query<Record<string, number>>(
+      `SELECT COALESCE(MAX("U_CodPerfil"), 0) + 1 AS "newId" FROM ${this.DB}`,
+    );
+    const newId = HanaService.col(maxRows[0], 'newId');
+
     await this.hanaService.execute(
       `INSERT INTO ${this.DB}
-         ("U_NombrePerfil", "U_Trabaja", "U_Per_CtaBl",
+         ("U_CodPerfil", "U_NombrePerfil", "U_Trabaja", "U_Per_CtaBl",
           "U_PRO_CAR", "U_PRO_Texto", "U_CUE_CAR", "U_CUE_Texto",
           "U_EMP_CAR", "U_EMP_TEXTO", "U_ControlPartida", "U_CntLineas",
           "U_Bolivianos", "U_SUCURSAL", "U_REP1", "U_REP2")
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        newId,
         dto.nombrePerfil,
         dto.trabaja        ?? '0',
         dto.perCtaBl       ?? 0,
@@ -66,16 +73,11 @@ export class PerfilesHanaRepository implements IPerfilesRepository {
         dto.cntLineas      ?? 5,
         dto.bolivianos     ?? 0,
         dto.sucursal       ?? 0,
-        dto.rep1           ?? '',
-        dto.rep2           ?? '',
+        dto.rep1           ?? '100011100001110000000000000001000',
+        dto.rep2           ?? '100011100001110000000000000001000',
       ],
     );
 
-    // Recuperar el ID generado por IDENTITY antes de que otra sesión haga otro INSERT
-    const idRows = await this.hanaService.query<Record<string, number>>(
-      `SELECT CURRENT_IDENTITY_VALUE() AS "newId" FROM DUMMY`,
-    );
-    const newId = HanaService.col(idRows[0], 'newId');
     return this.findOne(newId);
   }
 
