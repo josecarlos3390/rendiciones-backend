@@ -8,7 +8,8 @@ export interface Permiso {
 }
 
 export interface UsuarioSimple {
-  U_IdU:    number;
-  U_Login:  string;
-  U_NomUser: string;
+  U_IdU:      number;
+  U_Login:    string;
+  U_NomUser:  string;
+  U_SuperUser?: number;
 }

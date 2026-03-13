@@ -4,7 +4,7 @@ export interface RendU {
   U_NomUser:         string;
   U_NomSup:          string;
   U_SuperUser:       number;
-  U_Estado:          string;    // CHAR(1) — '1'=Activo, '0'=Inactivo, '2'=Bloqueado
+  U_Estado:          number;    // 0=Inactivo, 1=Activo, 2=Bloqueado
   U_AppRend:         string;
   U_AppConf:         string;
   U_AppExtB:         string;

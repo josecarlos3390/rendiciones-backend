@@ -14,6 +14,7 @@ import { PermisosModule }         from './modules/permisos/permisos.module';
 import { DocumentosModule }       from './modules/documentos/documentos.module';
 import { RendMModule }            from './modules/rend-m/rend-m.module';
 import { RendDModule }            from './modules/rend-d/rend-d.module';
+import { SapModule }              from './modules/sap/sap.module';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard }   from './common/guards/roles.guard';
@@ -42,6 +43,7 @@ import { loggerConfig } from './config/logger.config';
     DocumentosModule,
     RendMModule,
     RendDModule,
+    SapModule,
   ],
   providers: [
     // JWT aplicado globalmente — usar @Public() para excluir rutas

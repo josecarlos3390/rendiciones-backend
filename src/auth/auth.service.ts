@@ -32,13 +32,14 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const { username, password } = dto;
+    const { password } = dto;
+    const username = dto.username.trim().toLowerCase();
 
     const rows = await this.hanaService.query<any>(
       `SELECT "U_IdU", "U_Login", "U_Pass", "U_SuperUser", "U_NomUser",
               "U_Estado", "U_AppRend", "U_AppConf", "U_FECHAEXPIRACION"
        FROM ${this.DB}
-       WHERE "U_Login" = ?`,
+       WHERE LOWER("U_Login") = ?`,
       [username],
     );
 
@@ -73,7 +74,7 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales invalidas');
     }
 
-    if (estado !== 'A') {
+    if (estado !== '1') {
       throw new UnauthorizedException('Tu cuenta esta inactiva. Contacta al administrador.');
     }
 
@@ -117,7 +118,7 @@ export class AuthService {
     const appRend   = col('U_AppRend')   ?? 'N';
     const appConf   = col('U_AppConf')   ?? 'N';
 
-    if (estado !== 'A') throw new UnauthorizedException('Tu cuenta esta inactiva. Contacta al administrador.');
+    if (estado !== '1') throw new UnauthorizedException('Tu cuenta esta inactiva. Contacta al administrador.');
     if (new Date(expDate) < new Date()) throw new UnauthorizedException('Tu cuenta ha expirado. Contacta al administrador.');
 
     const payload: JwtPayload = {

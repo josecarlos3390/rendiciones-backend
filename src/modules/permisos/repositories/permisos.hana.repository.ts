@@ -21,10 +21,9 @@ export class PermisosHanaRepository implements IPermisosRepository {
 
   async findUsuarios(): Promise<UsuarioSimple[]> {
     return this.hanaService.query<UsuarioSimple>(
-      `SELECT "U_IdU", "U_Login", "U_NomUser"
+      `SELECT "U_IdU", "U_Login", "U_NomUser", "U_SuperUser"
        FROM ${this.DB_USR}
-       WHERE "U_Estado" = 'A' OR "U_Estado" IS NULL
-       ORDER BY "U_NomUser", "U_Login"`,
+       ORDER BY "U_SuperUser" DESC, "U_NomUser", "U_Login"`,
     );
   }
 

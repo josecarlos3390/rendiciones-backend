@@ -83,7 +83,7 @@ export class DocumentosHanaRepository implements IDocumentosRepository {
         dto.tipDoc,
         dto.exentoPercent ?? 0,
         dto.idTipoDoc,
-        dto.tipoCalc,
+        Number(dto.tipoCalc),
         dto.ivaPercent    ?? 0,    dto.ivaCuenta   ?? '',
         dto.itPercent     ?? 0,    dto.itCuenta    ?? '',
         dto.iuePercent    ?? 0,    dto.iueCuenta   ?? '',
@@ -109,7 +109,7 @@ export class DocumentosHanaRepository implements IDocumentosRepository {
     addField('U_CodPerfil',    dto.codPerfil);
     addField('U_TipDoc',       dto.tipDoc);
     addField('U_IdTipoDoc',    dto.idTipoDoc);
-    addField('U_TipoCalc',     dto.tipoCalc);
+    addField('U_TipoCalc',     dto.tipoCalc !== undefined ? Number(dto.tipoCalc) : undefined);
     addField('U_IVApercent',   dto.ivaPercent);
     addField('U_IVAcuenta',    dto.ivaCuenta);
     addField('U_ITpercent',    dto.itPercent);

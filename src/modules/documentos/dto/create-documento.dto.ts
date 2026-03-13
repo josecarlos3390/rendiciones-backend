@@ -18,8 +18,8 @@ export class CreateDocumentoDto {
   @IsInt() @Type(() => Number)
   idTipoDoc: number;
 
-  @ApiProperty({ description: 'Tipo de Cálculo: G=Grossing Up, N=Normal' })
-  @IsString() @IsIn(['G', 'N'])
+  @ApiProperty({ description: 'Tipo de Cálculo: 1=Grossing Up, 0=Grossing Down' })
+  @IsString() @IsIn(['1', '0'])
   tipoCalc: string;
 
   @ApiPropertyOptional({ default: 0 })

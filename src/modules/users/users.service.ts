@@ -57,6 +57,8 @@ export class UsersService {
   }
 
   async create(dto: CreateUserDto) {
+    dto.login = dto.login.trim().toLowerCase();
+
     if (dto.login.length > 10) {
       throw new BadRequestException('El login no puede superar 10 caracteres');
     }
@@ -72,32 +74,39 @@ export class UsersService {
       return d.toISOString().split('T')[0];
     })();
 
+    const seqRows = await this.hanaService.query<any>(
+      `SELECT COALESCE(MAX("U_IdU"), 0) + 1 AS NEXT_ID FROM ${this.DB}`,
+    );
+    const nextId = seqRows[0]?.NEXT_ID ?? 1;
+
     await this.hanaService.execute(
       `INSERT INTO ${this.DB}
-         ("U_Login", "U_Pass", "U_NomUser", "U_NomSup", "U_SuperUser",
+         ("U_IdU", "U_Login", "U_Pass", "U_NomUser", "U_NomSup", "U_SuperUser",
           "U_Estado", "U_AppRend", "U_AppConf", "U_AppExtB", "U_AppUpLA",
           "U_GenDocPre", "U_FECHAEXPIRACION", "U_FIJARNR",
           "U_NR1", "U_NR2", "U_NR3", "U_NR4", "U_NR5", "U_FIJARSALDO")
-       VALUES (?, ?, ?, ?, ?, 'A', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        nextId,
         dto.login,
         hashedPassword,
         dto.name,
         dto.supervisorName  ?? '',
         dto.superUser       ?? 0,
-        dto.appRend         ?? 'Y',
-        dto.appConf         ?? 'N',
-        dto.appExtB         ?? 'N',
-        dto.appUpLA         ?? 'N',
-        dto.genDocPre       ?? 'N',
+        dto.estado          ?? '1',
+        dto.appRend         ?? '1',
+        dto.appConf         ?? '0',
+        dto.appExtB         ?? '0',
+        dto.appUpLA         ?? '0',
+        dto.genDocPre       ?? '0',
         expStr,
-        dto.fijarNr         ?? 'N',
+        dto.fijarNr         ?? '0',
         dto.nr1             ?? '',
         dto.nr2             ?? '',
         dto.nr3             ?? '',
         dto.nr4             ?? '',
         dto.nr5             ?? '',
-        dto.fijarSaldo      ?? 'N',
+        dto.fijarSaldo      ?? '0',
       ],
     );
 
