@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Patch, Delete,
-  Body, Param, ParseIntPipe, Req,
+  Body, Param, ParseIntPipe, Query, Req,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { RendMService }     from './rend-m.service';
@@ -26,10 +26,14 @@ export class RendMController {
 
   @Get()
   @Roles('ADMIN', 'USER')
-  @ApiOperation({ summary: 'Listar cabeceras de rendición — ADMIN ve todas, USER ve las suyas' })
+  @ApiOperation({ summary: 'Listar cabeceras de rendición — filtradas por U_IdUsuario + U_IdPerfil del usuario logueado' })
   @ApiResponse({ status: 200, description: 'Lista de cabeceras REND_M' })
-  findAll(@Req() req: any) {
-    return this.rendMService.findAll(req.user.role, String(req.user.sub));
+  findAll(@Req() req: any, @Query('idPerfil') idPerfil: string) {
+    return this.rendMService.findAll(
+      req.user.role,
+      String(req.user.sub),
+      idPerfil ? Number(idPerfil) : undefined,
+    );
   }
 
   @Get(':id')

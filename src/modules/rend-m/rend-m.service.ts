@@ -1,6 +1,6 @@
 import {
   Injectable, Inject, NotFoundException,
-  ForbiddenException, Logger,
+  ForbiddenException, BadRequestException, Logger,
 } from '@nestjs/common';
 import { IRendMRepository } from './repositories/rend-m.repository.interface';
 import { CreateRendMDto }   from './dto/create-rend-m.dto';
@@ -15,10 +15,9 @@ export class RendMService {
     private readonly repo: IRendMRepository,
   ) {}
 
-  /** ADMIN ve todas; USER ve solo las suyas */
-  async findAll(role: string, idUsuario: string) {
-    if (role === 'ADMIN') return this.repo.findAll();
-    return this.repo.findByUser(idUsuario);
+  /** Filtra siempre por U_IdUsuario + U_IdPerfil (cuando se provee), tanto ADMIN como USER */
+  async findAll(role: string, idUsuario: string, idPerfil?: number) {
+    return this.repo.findByUser(idUsuario, idPerfil);
   }
 
   async findOne(id: number) {
@@ -33,6 +32,15 @@ export class RendMService {
     nomUsuario:   string,
     nombrePerfil: string,
   ) {
+    // Si la cuenta es ASOCIADA, empleado y nombreEmpleado son obligatorios
+    if (dto.cuentaAsociada === 'Y') {
+      if (!dto.empleado?.trim()) {
+        throw new BadRequestException('El campo empleado es obligatorio para cuentas asociadas');
+      }
+      if (!dto.nombreEmpleado?.trim()) {
+        throw new BadRequestException('El campo nombreEmpleado es obligatorio para cuentas asociadas');
+      }
+    }
     return this.repo.create(dto, idUsuario, nomUsuario, nombrePerfil);
   }
 

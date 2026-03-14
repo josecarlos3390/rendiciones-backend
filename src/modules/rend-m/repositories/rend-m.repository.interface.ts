@@ -4,7 +4,7 @@ import { UpdateRendMDto } from '../dto/update-rend-m.dto';
 
 export interface IRendMRepository {
   findAll(): Promise<RendM[]>;
-  findByUser(idUsuario: string): Promise<RendM[]>;
+  findByUser(idUsuario: string, idPerfil?: number): Promise<RendM[]>;
   findOne(id: number): Promise<RendM | null>;
   create(dto: CreateRendMDto, idUsuario: string, nomUsuario: string, nombrePerfil: string): Promise<RendM | null>;
   update(id: number, dto: UpdateRendMDto): Promise<{ affected: number }>;

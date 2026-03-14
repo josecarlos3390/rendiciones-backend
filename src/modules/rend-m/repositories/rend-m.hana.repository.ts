@@ -38,7 +38,15 @@ export class RendMHanaRepository implements IRendMRepository {
     );
   }
 
-  async findByUser(idUsuario: string): Promise<RendM[]> {
+  async findByUser(idUsuario: string, idPerfil?: number): Promise<RendM[]> {
+    if (idPerfil !== undefined) {
+      return this.hanaService.query<RendM>(
+        `SELECT ${SAFE_COLS} FROM ${this.DB}
+         WHERE "U_IdUsuario" = ? AND "U_IdPerfil" = ?
+         ORDER BY "U_FechaCreacion" DESC`,
+        [idUsuario, idPerfil],
+      );
+    }
     return this.hanaService.query<RendM>(
       `SELECT ${SAFE_COLS} FROM ${this.DB}
        WHERE "U_IdUsuario" = ?
@@ -89,8 +97,8 @@ export class RendMHanaRepository implements IRendMRepository {
         // U_Estado 1 = ABIERTO al crear
         dto.cuenta,
         dto.nombreCuenta,
-        dto.empleado,
-        dto.nombreEmpleado,
+        dto.empleado       ?? '',
+        dto.nombreEmpleado ?? '',
         dto.fechaIni,
         dto.fechaFinal,
         dto.monto,

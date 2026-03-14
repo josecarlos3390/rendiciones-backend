@@ -1,6 +1,6 @@
 import {
   IsString, IsNotEmpty, IsNumber, IsOptional,
-  IsDateString, MaxLength, Min,
+  IsDateString, MaxLength, Min, IsIn,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -23,17 +23,22 @@ export class CreateRendMDto {
   @MaxLength(250)
   nombreCuenta: string;
 
-  @ApiProperty({ description: 'Código del empleado', example: 'EL00005', maxLength: 25 })
+  @ApiProperty({ description: 'Indica si la cuenta está asociada a empleado: Y = asociada, N = no asociada', example: 'Y' })
   @IsString()
-  @IsNotEmpty()
-  @MaxLength(25)
-  empleado: string;
+  @IsIn(['Y', 'N'])
+  cuentaAsociada: string;
 
-  @ApiProperty({ description: 'Nombre del empleado', maxLength: 250 })
+  @ApiPropertyOptional({ description: 'Código del empleado — requerido si cuentaAsociada = Y', example: 'EL00005', maxLength: 25 })
   @IsString()
-  @IsNotEmpty()
+  @IsOptional()
+  @MaxLength(25)
+  empleado?: string;
+
+  @ApiPropertyOptional({ description: 'Nombre del empleado — requerido si cuentaAsociada = Y', maxLength: 250 })
+  @IsString()
+  @IsOptional()
   @MaxLength(250)
-  nombreEmpleado: string;
+  nombreEmpleado?: string;
 
   @ApiProperty({ description: 'Objetivo / descripción de la rendición', maxLength: 250 })
   @IsString()
