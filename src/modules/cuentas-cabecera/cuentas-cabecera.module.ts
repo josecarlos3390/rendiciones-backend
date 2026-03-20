@@ -2,10 +2,9 @@ import { Module } from '@nestjs/common';
 import { CuentasCabeceraService }        from './cuentas-cabecera.service';
 import { CuentasCabeceraController }     from './cuentas-cabecera.controller';
 import { CuentasCabeceraHanaRepository } from './repositories/cuentas-cabecera.hana.repository';
-import { DatabaseModule }                from '../../database/database.module';
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [],
   controllers: [CuentasCabeceraController],
   providers: [
     CuentasCabeceraService,

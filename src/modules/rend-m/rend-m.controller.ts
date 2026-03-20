@@ -6,6 +6,7 @@ import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagg
 import { RendMService }     from './rend-m.service';
 import { CreateRendMDto }   from './dto/create-rend-m.dto';
 import { UpdateRendMDto }   from './dto/update-rend-m.dto';
+import { PaginationDto, RendMQueryDto } from '../../common/dto/pagination.dto';
 import { Roles }            from '../../auth/decorators/roles.decorator';
 import { PerfilesService }  from '../perfiles/perfiles.service';
 
@@ -26,13 +27,17 @@ export class RendMController {
 
   @Get()
   @Roles('ADMIN', 'USER')
-  @ApiOperation({ summary: 'Listar cabeceras de rendición — filtradas por U_IdUsuario + U_IdPerfil del usuario logueado' })
-  @ApiResponse({ status: 200, description: 'Lista de cabeceras REND_M' })
-  findAll(@Req() req: any, @Query('idPerfil') idPerfil: string) {
+  @ApiOperation({ summary: 'Listar cabeceras de rendición paginadas — filtradas por usuario logueado' })
+  @ApiResponse({ status: 200, description: 'Resultado paginado de cabeceras REND_M' })
+  findAll(
+    @Req() req: any,
+    @Query() query: RendMQueryDto,
+  ) {
     return this.rendMService.findAll(
       req.user.role,
       String(req.user.sub),
-      idPerfil ? Number(idPerfil) : undefined,
+      query.idPerfil,
+      query,
     );
   }
 

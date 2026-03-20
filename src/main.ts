@@ -9,10 +9,33 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 const logger = new Logger('Bootstrap');
 
 function validateEnv() {
-  const required = ['JWT_SECRET', 'HANA_HOST', 'HANA_USER', 'HANA_PASSWORD', 'HANA_SCHEMA'];
-  const missing  = required.filter((k) => !process.env[k]);
+  const dbType  = (process.env.DB_TYPE  ?? 'HANA').toUpperCase();
+  const appMode = (process.env.APP_MODE ?? 'ONLINE').toUpperCase();
+
+  const base: string[] = ['JWT_SECRET'];
+
+  const byEngine: Record<string, string[]> = {
+    HANA:      ['HANA_HOST', 'HANA_USER', 'HANA_PASSWORD', 'HANA_SCHEMA'],
+    SQLSERVER: ['SQL_HOST',  'SQL_USER',  'SQL_PASSWORD',  'SQL_DATABASE'],
+    POSTGRES:  ['PG_HOST',   'PG_USER',   'PG_PASSWORD',   'PG_DATABASE'],
+  };
+
+  const bySapMode: Record<string, string[]> = {
+    ONLINE:  ['SAP_SL_URL', 'SAP_SL_USER', 'SAP_SL_PASSWORD', 'SAP_SL_COMPANY'],
+    OFFLINE: [],
+  };
+
+  const required = [
+    ...base,
+    ...(byEngine[dbType]    ?? []),
+    ...(bySapMode[appMode]  ?? []),
+  ];
+
+  const missing = required.filter((k) => !process.env[k]);
   if (missing.length > 0) {
-    throw new Error(`Variables de entorno requeridas no configuradas: ${missing.join(', ')}`);
+    throw new Error(
+      `Variables de entorno requeridas para DB_TYPE=${dbType} APP_MODE=${appMode}: ${missing.join(', ')}`,
+    );
   }
 }
 
@@ -67,18 +90,22 @@ async function bootstrap() {
   // Swagger
   const swaggerCfg = new DocumentBuilder()
     .setTitle('Rendiciones API')
-    .setDescription('API del sistema de rendiciones — NestJS + SAP HANA')
+    .setDescription('API del sistema de rendiciones')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
   SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, swaggerCfg));
 
-  const port = process.env.PORT ?? 3000;
+  const port    = process.env.PORT     ?? 3000;
+  const dbType  = process.env.DB_TYPE  ?? 'HANA';
+  const appMode = process.env.APP_MODE ?? 'ONLINE';
+
   await app.listen(port, '0.0.0.0');
 
   logger.log(`API:     http://localhost:${port}/api/v1`);
   logger.log(`Swagger: http://localhost:${port}/api/docs`);
-  logger.log(`DB:      ${process.env.DB_TYPE ?? 'HANA'}`);
+  logger.log(`DB:      ${dbType}`);
+  logger.log(`Mode:    ${appMode}`);
 }
 
 bootstrap().catch((err) => {

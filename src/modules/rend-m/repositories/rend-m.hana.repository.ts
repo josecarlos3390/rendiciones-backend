@@ -1,10 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HanaService } from '../../../database/hana.service';
+import { Inject } from '@nestjs/common';
+import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
+import { tbl } from '../../../database/db-table.helper';
 import { IRendMRepository } from './rend-m.repository.interface';
 import { RendM } from '../interfaces/rend-m.interface';
 import { CreateRendMDto } from '../dto/create-rend-m.dto';
 import { UpdateRendMDto } from '../dto/update-rend-m.dto';
+import { PaginatedResult } from '../../../common/dto/pagination.dto';
 
 const SAFE_COLS = `
   "U_IdRendicion", "U_IdUsuario", "U_IdPerfil",
@@ -22,41 +25,63 @@ export class RendMHanaRepository implements IRendMRepository {
   private get schema(): string {
     return this.configService.get<string>('hana.schema');
   }
+  private get dbType(): string {
+    return this.configService.get<string>('app.dbType', 'HANA').toUpperCase();
+  }
+
 
   private get DB(): string {
-    return `"${this.schema}"."REND_M"`;
+    return tbl(this.schema, 'REND_M', this.dbType);
   }
 
   constructor(
-    private readonly hanaService:   HanaService,
+    @Inject(DATABASE_SERVICE)
+    private readonly db: IDatabaseService,
     private readonly configService: ConfigService,
   ) {}
 
-  async findAll(): Promise<RendM[]> {
-    return this.hanaService.query<RendM>(
-      `SELECT ${SAFE_COLS} FROM ${this.DB} ORDER BY "U_FechaCreacion" DESC`,
-    );
-  }
+  async findByUser(
+    idUsuario: string,
+    idPerfil:  number | undefined,
+    page:      number,
+    limit:     number,
+  ): Promise<PaginatedResult<RendM>> {
+    const offset = (page - 1) * limit;
+    const hasPerfilFilter = idPerfil !== undefined;
 
-  async findByUser(idUsuario: string, idPerfil?: number): Promise<RendM[]> {
-    if (idPerfil !== undefined) {
-      return this.hanaService.query<RendM>(
-        `SELECT ${SAFE_COLS} FROM ${this.DB}
-         WHERE "U_IdUsuario" = ? AND "U_IdPerfil" = ?
-         ORDER BY "U_FechaCreacion" DESC`,
-        [idUsuario, idPerfil],
-      );
-    }
-    return this.hanaService.query<RendM>(
-      `SELECT ${SAFE_COLS} FROM ${this.DB}
-       WHERE "U_IdUsuario" = ?
-       ORDER BY "U_FechaCreacion" DESC`,
-      [idUsuario],
+    // WHERE dinámico según filtros
+    const where  = hasPerfilFilter
+      ? `WHERE "U_IdUsuario" = ? AND "U_IdPerfil" = ?`
+      : `WHERE "U_IdUsuario" = ?`;
+    const params = hasPerfilFilter ? [idUsuario, idPerfil] : [idUsuario];
+
+    // COUNT para el total
+    const countRow = await this.db.queryOne<Record<string, number>>(
+      `SELECT COUNT(*) AS "total" FROM ${this.DB} ${where}`,
+      params,
     );
+    const total = this.db.col(countRow, 'total') ?? 0;
+
+    // Datos paginados con LIMIT/OFFSET (sintaxis HANA)
+    const data = await this.db.query<RendM>(
+      `SELECT ${SAFE_COLS} FROM ${this.DB}
+       ${where}
+       ORDER BY "U_FechaCreacion" DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset],
+    );
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   async findOne(id: number): Promise<RendM | null> {
-    const rows = await this.hanaService.query<RendM>(
+    const rows = await this.db.query<RendM>(
       `SELECT ${SAFE_COLS} FROM ${this.DB} WHERE "U_IdRendicion" = ?`,
       [id],
     );
@@ -72,12 +97,12 @@ export class RendMHanaRepository implements IRendMRepository {
     const now = new Date().toISOString();
 
     // REND_M no tiene columna IDENTITY — generar el ID manualmente con MAX+1
-    const idRows = await this.hanaService.query<Record<string, number>>(
+    const idRows = await this.db.query<Record<string, number>>(
       `SELECT COALESCE(MAX("U_IdRendicion"), 0) + 1 AS "newId" FROM ${this.DB}`,
     );
-    const newId = HanaService.col(idRows[0], 'newId');
+    const newId = this.db.col(idRows[0], 'newId');
 
-    await this.hanaService.execute(
+    await this.db.execute(
       `INSERT INTO ${this.DB}
          ("U_IdRendicion",
           "U_IdUsuario", "U_IdPerfil", "U_NomUsuario", "U_NombrePerfil",
@@ -140,7 +165,7 @@ export class RendMHanaRepository implements IRendMRepository {
     params.push(new Date().toISOString());
     params.push(id);
 
-    const affected = await this.hanaService.execute(
+    const affected = await this.db.execute(
       `UPDATE ${this.DB} SET ${setParts.join(', ')} WHERE "U_IdRendicion" = ?`,
       params,
     );
@@ -148,7 +173,7 @@ export class RendMHanaRepository implements IRendMRepository {
   }
 
   async remove(id: number): Promise<{ affected: number }> {
-    const affected = await this.hanaService.execute(
+    const affected = await this.db.execute(
       `DELETE FROM ${this.DB} WHERE "U_IdRendicion" = ?`,
       [id],
     );

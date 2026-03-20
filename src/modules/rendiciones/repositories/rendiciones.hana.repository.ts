@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HanaService } from '../../../database/hana.service';
+import { Inject } from '@nestjs/common';
+import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
 import { IRendicionesRepository, CreateRendicionData } from './rendiciones.repository.interface';
 
 /**
@@ -12,14 +13,15 @@ export class RendicionesHanaRepository implements IRendicionesRepository {
   private readonly schema: string;
 
   constructor(
-    private readonly hanaService: HanaService,
+    @Inject(DATABASE_SERVICE)
+    private readonly db: IDatabaseService,
     private readonly configService: ConfigService,
   ) {
     this.schema = this.configService.get<string>('hana.schema');
   }
 
   async findAll(): Promise<any[]> {
-    return this.hanaService.query(
+    return this.db.query(
       `SELECT ID, DESCRIPCION, MONTO, FECHA, ESTADO, USUARIO_ID, OBSERVACIONES, FECHA_CREACION
        FROM "${this.schema}"."RENDICIONES"
        ORDER BY FECHA_CREACION DESC`,
@@ -27,7 +29,7 @@ export class RendicionesHanaRepository implements IRendicionesRepository {
   }
 
   async findOne(id: number): Promise<any | null> {
-    const rows = await this.hanaService.query(
+    const rows = await this.db.query(
       `SELECT ID, DESCRIPCION, MONTO, FECHA, ESTADO, USUARIO_ID, OBSERVACIONES, FECHA_CREACION
        FROM "${this.schema}"."RENDICIONES"
        WHERE ID = ?`,
@@ -37,7 +39,7 @@ export class RendicionesHanaRepository implements IRendicionesRepository {
   }
 
   async create(data: CreateRendicionData, userId: number): Promise<any> {
-    await this.hanaService.execute(
+    await this.db.execute(
       `INSERT INTO "${this.schema}"."RENDICIONES"
          (DESCRIPCION, MONTO, FECHA, OBSERVACIONES, USUARIO_ID, ESTADO, FECHA_CREACION)
        VALUES (?, ?, ?, ?, ?, 'PENDIENTE', CURRENT_TIMESTAMP)`,
@@ -46,10 +48,10 @@ export class RendicionesHanaRepository implements IRendicionesRepository {
 
     // CURRENT_IDENTITY_VALUE() retorna el último ID generado por una columna
     // GENERATED AS IDENTITY en la misma conexión — equivalente a LAST_INSERT_ID en MySQL.
-    const rows = await this.hanaService.query<any>(
+    const rows = await this.db.query<any>(
       `SELECT CURRENT_IDENTITY_VALUE() AS "ID" FROM DUMMY`,
     );
-    const newId = HanaService.col(rows[0], 'ID');
+    const newId = this.db.col(rows[0], 'ID');
     return this.findOne(newId);
   }
 
@@ -65,7 +67,7 @@ export class RendicionesHanaRepository implements IRendicionesRepository {
     if (!setParts.length) return { affected: 0 };
 
     params.push(id);
-    const affected = await this.hanaService.execute(
+    const affected = await this.db.execute(
       `UPDATE "${this.schema}"."RENDICIONES"
        SET ${setParts.join(', ')}
        WHERE ID = ?`,
@@ -75,7 +77,7 @@ export class RendicionesHanaRepository implements IRendicionesRepository {
   }
 
   async remove(id: number): Promise<{ affected: number }> {
-    const affected = await this.hanaService.execute(
+    const affected = await this.db.execute(
       `DELETE FROM "${this.schema}"."RENDICIONES" WHERE ID = ?`,
       [id],
     );

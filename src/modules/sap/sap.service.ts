@@ -4,6 +4,18 @@ import * as https from 'https';
 
 // ── Interfaces Service Layer ──────────────────────────────────────────────────
 
+/** Cuenta del plan contable simplificada para el selector */
+export interface CuentaDto {
+  code: string;
+  name: string;
+}
+
+/** Perfil mínimo necesario para resolver el filtro de cuentas */
+export interface PerfilCuentaConfig {
+  cueCar:   string;        // U_CUE_CAR:   EMPIEZA | TERMINA | TODOS | RANGO | LISTA
+  cueTexto: string | null; // U_CUE_Texto: /1/2/5/6/8
+}
+
 interface SLDimension {
   DimensionCode:        number;
   DimensionName:        string;
@@ -219,6 +231,190 @@ export class SapService {
         `SAP BusinessPartners empleados: ${err?.message ?? 'Error desconocido'}`,
       );
     }
+  }
+
+  // ── Proveedores (BusinessPartners filtrados por perfil) ──────────────────────
+
+  /**
+   * Retorna proveedores desde SAP SL según la configuración del perfil.
+   *
+   * U_PRO_CAR define el tipo de filtro:
+   *   TODOS   → busca solo por nombre (sin filtro de CardCode)
+   *   EMPIEZA → startswith(CardCode, patrón)
+   *   TERMINA → endswith(CardCode, patrón)
+   *
+   * @param car     U_PRO_CAR del perfil
+   * @param filtro  U_PRO_Texto del perfil (patrón de CardCode)
+   * @param busqueda texto libre del usuario (busca en CardName)
+   */
+  async getProveedores(car: string, filtro: string, busqueda: string): Promise<EmpleadoDto[]> {
+    const carUpper = (car ?? 'TODOS').toUpperCase();
+
+    try {
+      const filters: string[] = [];
+
+      // Filtro por patrón de CardCode según configuración del perfil
+      if (carUpper !== 'TODOS' && filtro) {
+        const patrones = filtro.split('/').map(p => p.trim()).filter(Boolean);
+        if (patrones.length > 0) {
+          const conds = patrones.map(p =>
+            carUpper === 'TERMINA'
+              ? `endswith(CardCode, '${p}')`
+              : `startswith(CardCode, '${p}')`,
+          );
+          filters.push(`(${conds.join(' or ')})`);
+        }
+      }
+
+      // Filtro por nombre si el usuario escribió algo
+      if (busqueda) {
+        const q = busqueda.replace(/'/g, "''");
+        const esCodigoNumerico = /^[\w\d]+$/.test(q) && !/[a-zA-Z]/.test(q);
+        if (esCodigoNumerico) {
+          filters.push(`startswith(CardCode, '${q}')`);
+        } else {
+          filters.push(`contains(CardName, '${q}')`);
+        }
+      }
+
+      if (filters.length === 0) return [];
+
+      const combined = filters.join(' and ');
+      const endpoint = `BusinessPartners?$select=CardCode,CardName&$filter=${encodeURIComponent(combined)}&$orderby=CardName&$top=200`;
+
+      this.logger.debug(`getProveedores query: ${decodeURIComponent(endpoint)}`);
+
+      const data = await this.slGet<{ value: SLBusinessPartner[] }>(endpoint);
+      return (data.value ?? []).map(bp => ({
+        cardCode: bp.CardCode,
+        cardName: bp.CardName,
+      }));
+
+    } catch (err: any) {
+      this.session = null;
+      this.logger.error('Error getProveedores SAP SL:', err?.message ?? err);
+      throw new InternalServerErrorException(
+        `SAP BusinessPartners proveedores: ${err?.message ?? 'Error desconocido'}`,
+      );
+    }
+  }
+
+  // ── Cuentas por perfil ───────────────────────────────────────────────────────
+
+  /**
+   * Devuelve cuentas del plan contable filtradas según la configuración del perfil.
+   *
+   * U_CUE_CAR define el tipo de filtro:
+   *   TODOS   → todas las cuentas nivel 5 activas
+   *   EMPIEZA → Code startswith cada patrón de U_CUE_Texto (/1/2/5)
+   *   TERMINA → Code endswith cada patrón
+   *   RANGO   → Code contains cada patrón (substringof)
+   *   LISTA   → las cuentas ya están en REND_CTA_M, se pasan como listaCuentas
+   *
+   * Para EMPIEZA/TERMINA/RANGO/TODOS consulta SAP SL.
+   * Para LISTA el llamador pasa las cuentas directamente (ya las tiene el frontend).
+   *
+   * @param config     configuración del perfil (cueCar + cueTexto)
+   * @param busqueda   término de búsqueda libre (filtra por Code o Name)
+   * @param listaCuentas cuentas pre-cargadas (solo para cueCar === 'LISTA')
+   */
+  async getCuentasByPerfil(
+    config:       PerfilCuentaConfig,
+    busqueda:     string,
+    listaCuentas: CuentaDto[] = [],
+  ): Promise<CuentaDto[]> {
+    const car = (config.cueCar ?? 'TODOS').toUpperCase();
+
+    // ── LISTA: filtrar sobre las cuentas ya cargadas ─────────────────────────
+    if (car === 'LISTA') {
+      const q = busqueda.toLowerCase();
+      return listaCuentas.filter(c =>
+        c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q),
+      );
+    }
+
+    // ── SAP SL: construir filtro OData ───────────────────────────────────────
+    try {
+      const baseFilter = "ActiveAccount eq 'tYES' and FrozenFor eq 'tNO' and AccountLevel ge 5";
+      let   carFilter  = '';
+
+      if (car === 'TODOS') {
+        carFilter = '';
+      } else {
+        // Parsear el patrón: /1/2/5/6/8 → ['1','2','5','6','8']
+        const patrones = this.parsearPatrones(config.cueTexto ?? '');
+        if (patrones.length === 0) {
+          carFilter = '';
+        } else {
+          const condiciones = patrones.map(p => {
+            if (car === 'EMPIEZA') return `startswith(Code, '${p}')`;
+            if (car === 'TERMINA') return `endswith(Code, '${p}')`;
+            // RANGO: el patrón tiene formato "inicio|fin" o se toman pares del cueTexto
+            // El cueTexto para RANGO es "/inicio/fin" — primer valor empieza, segundo termina
+            // Se genera: startswith(Code,'inicio') and endswith(Code,'fin')
+            return `startswith(Code, '${p}')`;
+          });
+
+          if (car === 'RANGO' && patrones.length >= 2) {
+            // Pares: patrones[0]=inicio, patrones[1]=fin
+            // Si hay más patrones se toman como pares: [0,1], [2,3], etc.
+            const pares: string[] = [];
+            for (let i = 0; i < patrones.length - 1; i += 2) {
+              pares.push(`(startswith(Code, '${patrones[i]}') and endswith(Code, '${patrones[i + 1]}'))`);
+            }
+            carFilter = pares.join(' or ');
+          } else {
+            carFilter = condiciones.join(' or ');
+          }
+        }
+      }
+
+      // ── Filtro de búsqueda libre ─────────────────────────────────────────────
+      // SAP SL v1 (OData v2) soporta: startswith, endswith, substringof
+      // NO soporta contains() — usar substringof('valor', campo)
+      let searchFilter = '';
+      if (busqueda) {
+        const q = busqueda.replace(/'/g, "''");
+        // Si la búsqueda parece un código (solo dígitos y puntos) → startswith(Code)
+        // Si parece un nombre (tiene letras) → contains(Name)
+        // Así coincide exactamente con el formato que acepta SAP SL
+        const esCodigoNumerico = /^[\d.]+$/.test(q);
+        searchFilter = esCodigoNumerico
+          ? `startswith(Code, '${q}')`
+          : `contains(Name, '${q}')`;
+      }
+
+      // ── Combinar ─────────────────────────────────────────────────────────────
+      let combined = baseFilter;
+      if (carFilter)    combined += ` and (${carFilter})`;
+      if (searchFilter) combined += ` and ${searchFilter}`;
+
+      const fields   = 'Code,Name';
+      const endpoint = `ChartOfAccounts?$select=${fields}&$filter=${encodeURIComponent(combined)}&$orderby=Code&$top=200`;
+
+      this.logger.debug(`getCuentasByPerfil query: ${decodeURIComponent(endpoint)}`);
+
+      const data = await this.slGet<{ value: SLAccount[] }>(endpoint);
+      return (data.value ?? []).map(a => ({ code: a.Code, name: a.Name }));
+
+    } catch (err: any) {
+      this.session = null;
+      this.logger.error('Error getCuentasByPerfil SAP SL:', err?.message ?? err);
+      throw new InternalServerErrorException(
+        `SAP ChartOfAccounts filtrado: ${err?.message ?? 'Error desconocido'}`,
+      );
+    }
+  }
+
+  /**
+   * Parsea el patrón de cuentas del perfil.
+   * "/1/2/5/6/8" → ["1","2","5","6","8"]
+   */
+  private parsearPatrones(texto: string): string[] {
+    return texto
+      .split('/')
+      .map(p => p.trim())
+      .filter(Boolean);
   }
 
   // ── Sesión: POST /Login → B1SESSION cookie ────────────────────────────────

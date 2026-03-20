@@ -2,10 +2,9 @@ import { Module } from '@nestjs/common';
 import { CuentasListaService }         from './cuentas-lista.service';
 import { CuentasListaController }      from './cuentas-lista.controller';
 import { CuentasListaHanaRepository }  from './repositories/cuentas-lista.hana.repository';
-import { DatabaseModule }              from '../../database/database.module';
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [],
   controllers: [CuentasListaController],
   providers: [
     CuentasListaService,

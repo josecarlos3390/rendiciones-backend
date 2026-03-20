@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HanaService } from '../../../database/hana.service';
+import { Inject } from '@nestjs/common';
+import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
+import { tbl } from '../../../database/db-table.helper';
 import { IPerfilesRepository } from './perfiles.repository.interface';
 import { Perfil } from '../interfaces/perfil.interface';
 import { CreatePerfilDto } from '../dto/create-perfil.dto';
@@ -20,24 +22,29 @@ export class PerfilesHanaRepository implements IPerfilesRepository {
   private get schema(): string {
     return this.configService.get<string>('hana.schema');
   }
+  private get dbType(): string {
+    return this.configService.get<string>('app.dbType', 'HANA').toUpperCase();
+  }
+
 
   private get DB(): string {
-    return `"${this.schema}"."REND_PERFIL"`;
+    return tbl(this.schema, 'REND_PERFIL', this.dbType);
   }
 
   constructor(
-    private readonly hanaService:   HanaService,
+    @Inject(DATABASE_SERVICE)
+    private readonly db: IDatabaseService,
     private readonly configService: ConfigService,
   ) {}
 
   async findAll(): Promise<Perfil[]> {
-    return this.hanaService.query<Perfil>(
+    return this.db.query<Perfil>(
       `SELECT ${SAFE_COLS} FROM ${this.DB} ORDER BY "U_NombrePerfil"`,
     );
   }
 
   async findOne(id: number): Promise<Perfil | null> {
-    const rows = await this.hanaService.query<Perfil>(
+    const rows = await this.db.query<Perfil>(
       `SELECT ${SAFE_COLS} FROM ${this.DB} WHERE "U_CodPerfil" = ?`,
       [id],
     );
@@ -46,12 +53,12 @@ export class PerfilesHanaRepository implements IPerfilesRepository {
 
   async create(dto: CreatePerfilDto): Promise<Perfil | null> {
     // Generar ID secuencial (no es IDENTITY — hay que calcularlo)
-    const maxRows = await this.hanaService.query<Record<string, number>>(
+    const maxRows = await this.db.query<Record<string, number>>(
       `SELECT COALESCE(MAX("U_CodPerfil"), 0) + 1 AS "newId" FROM ${this.DB}`,
     );
-    const newId = HanaService.col(maxRows[0], 'newId');
+    const newId = this.db.col(maxRows[0], 'newId');
 
-    await this.hanaService.execute(
+    await this.db.execute(
       `INSERT INTO ${this.DB}
          ("U_CodPerfil", "U_NombrePerfil", "U_Trabaja", "U_Per_CtaBl",
           "U_PRO_CAR", "U_PRO_Texto", "U_CUE_CAR", "U_CUE_Texto",
@@ -104,7 +111,7 @@ export class PerfilesHanaRepository implements IPerfilesRepository {
     if (!setParts.length) return { affected: 0 };
 
     params.push(id);
-    const affected = await this.hanaService.execute(
+    const affected = await this.db.execute(
       `UPDATE ${this.DB} SET ${setParts.join(', ')} WHERE "U_CodPerfil" = ?`,
       params,
     );
@@ -112,7 +119,7 @@ export class PerfilesHanaRepository implements IPerfilesRepository {
   }
 
   async remove(id: number): Promise<{ affected: number }> {
-    const affected = await this.hanaService.execute(
+    const affected = await this.db.execute(
       `DELETE FROM ${this.DB} WHERE "U_CodPerfil" = ?`,
       [id],
     );

@@ -38,7 +38,7 @@ export class RendDService {
     if (role !== 'ADMIN' && cabecera.U_IdUsuario !== idUsuarioStr) {
       throw new ForbiddenException('No tienes acceso a esta rendición');
     }
-    if (role !== 'ADMIN' && cabecera.U_Estado !== 0) {
+    if (role !== 'ADMIN' && cabecera.U_Estado !== 1) {
       throw new ForbiddenException('Solo se pueden agregar documentos a rendiciones en estado ABIERTO');
     }
     const result = await this.repo.create(idRendicion, idUsuario, dto);
@@ -53,7 +53,7 @@ export class RendDService {
     if (role !== 'ADMIN' && cabecera.U_IdUsuario !== idUsuario) {
       throw new ForbiddenException('No tienes acceso a esta rendición');
     }
-    if (role !== 'ADMIN' && cabecera.U_Estado !== 0) {
+    if (role !== 'ADMIN' && cabecera.U_Estado !== 1) {
       throw new ForbiddenException('Solo se pueden editar documentos de rendiciones en estado ABIERTO');
     }
     await this.repo.update(idRD, dto);
@@ -66,7 +66,7 @@ export class RendDService {
     if (role !== 'ADMIN' && cabecera.U_IdUsuario !== idUsuario) {
       throw new ForbiddenException('No tienes acceso a esta rendición');
     }
-    if (role !== 'ADMIN' && cabecera.U_Estado !== 0) {
+    if (role !== 'ADMIN' && cabecera.U_Estado !== 1) {
       throw new ForbiddenException('Solo se pueden eliminar documentos de rendiciones en estado ABIERTO');
     }
     return this.repo.remove(idRD);

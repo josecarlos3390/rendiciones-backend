@@ -1,0 +1,14 @@
+-- CREAR EN LA TABLA DE HANA STUDIO UNA SEQUENCE
+
+CREATE SEQUENCE "REND_RETAIL_QA2"."REND_D_SEQ"
+  START WITH 1
+  INCREMENT BY 1
+  NO CYCLE;
+
+  -------------------------------------------------------------
+-- 1. Ver el MAX actual
+SELECT MAX("U_RD_IdRD") FROM "REND_RETAIL_QA2"."REND_D";
+
+-- 2. Reiniciar la secuencia desde ese valor + 1
+-- (reemplaza XXXX con el resultado del paso anterior + 1)
+ALTER SEQUENCE "REND_RETAIL_QA2"."REND_D_SEQ" RESTART WITH XXXX;

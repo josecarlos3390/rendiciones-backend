@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HanaService } from '../../../database/hana.service';
+import { Inject } from '@nestjs/common';
+import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
+import { tbl } from '../../../database/db-table.helper';
 import { IRendDRepository } from './rend-d.repository.interface';
 import { RendD } from '../interfaces/rend-d.interface';
 import { CreateRendDDto } from '../dto/create-rend-d.dto';
@@ -33,17 +35,22 @@ export class RendDHanaRepository implements IRendDRepository {
     return this.configService.get<string>('hana.schema');
   }
 
+  private get dbType(): string {
+    return this.configService.get<string>('app.dbType', 'HANA').toUpperCase();
+  }
+
   private get DB(): string {
-    return `"${this.schema}"."REND_D"`;
+    return tbl(this.schema, 'REND_D', this.dbType);
   }
 
   constructor(
-    private readonly hanaService:   HanaService,
+    @Inject(DATABASE_SERVICE)
+    private readonly db: IDatabaseService,
     private readonly configService: ConfigService,
   ) {}
 
   async findByRendicion(idRendicion: number): Promise<RendD[]> {
-    return this.hanaService.query<RendD>(
+    return this.db.query<RendD>(
       `SELECT ${SAFE_COLS} FROM ${this.DB}
        WHERE "U_RD_RM_IdRendicion" = ?
        ORDER BY "U_RD_IdRD"`,
@@ -52,80 +59,109 @@ export class RendDHanaRepository implements IRendDRepository {
   }
 
   async findOne(idRD: number): Promise<RendD | null> {
-    const rows = await this.hanaService.query<RendD>(
+    const rows = await this.db.query<RendD>(
       `SELECT ${SAFE_COLS} FROM ${this.DB} WHERE "U_RD_IdRD" = ?`,
       [idRD],
     );
     return rows[0] ?? null;
   }
 
+  /**
+   * Genera el próximo ID para REND_D de forma atómica.
+   * POSTGRES: usa la secuencia rend_retail.REND_D_SEQ
+   * HANA:     usa la secuencia REND_D_SEQ nativa
+   * Otros:    MAX(U_RD_IdRD) + 1 como fallback
+   */
+  private async getNextId(): Promise<number> {
+    if (this.dbType === 'POSTGRES') {
+      const row = await this.db.queryOne<any>(
+        `SELECT nextval('"REND_D_SEQ"') AS "newId"`,
+      );
+      return Number(this.db.col(row, 'newId'));
+    }
+    if (this.dbType === 'HANA') {
+      const rows = await this.db.query<Record<string, number>>(
+        `SELECT "${this.schema}"."REND_D_SEQ".NEXTVAL AS "newId" FROM DUMMY`,
+      );
+      return Number(this.db.col(rows[0], 'newId'));
+    }
+    // Fallback SQL Server u otros
+    const row = await this.db.queryOne<any>(
+      `SELECT COALESCE(MAX("U_RD_IdRD"), 0) + 1 AS "newId" FROM ${this.DB}`,
+    );
+    return Number(this.db.col(row, 'newId')) || 1;
+  }
+
   async create(idRendicion: number, idUsuario: number, dto: CreateRendDDto): Promise<RendD | null> {
-    await this.hanaService.execute(
+    // Obtener el próximo ID desde la secuencia REND_D_SEQ — atómico por naturaleza,
+    // no requiere transacción para la generación del ID.
+    const newId = await this.getNextId();
+
+    await this.db.execute(
       `INSERT INTO ${this.DB} (
-        "U_RD_RM_IdRendicion", "U_RD_IdUsuario",
-        "U_RD_Cuenta", "U_RD_NombreCuenta", "U_RD_Concepto",
-        "U_RD_Importe", "U_RD_Descuento", "U_RD_TasaCero",
-        "U_RD_N1", "U_RD_N2", "U_RD_N3", "U_RD_N4", "U_RD_N5",
-        "U_RD_Proyecto", "U_RD_Fecha",
-        "U_RD_IdTipoDoc", "U_RD_IdDoc", "U_RD_TipoDoc",
-        "U_RD_Partida", "U_RD_Exento", "U_RD_Estado",
-        "U_RD_ImpRet", "U_RD_Total",
-        "U_RD_NumDocumento", "U_RD_NroAutor", "U_RD_Ctrl",
-        "U_RD_NIT", "U_RD_CodProv", "U_RD_Prov",
-        "U_MontoIVA", "U_MontoIT", "U_MontoIUE", "U_MontoRCIVA",
-        "U_CuentaIVA", "U_CuentaIT", "U_CuentaIUE", "U_CuentaRCIVA",
-        "U_ImporteBs", "U_EXENTOBS", "U_DESCTOBS",
-        "U_RD_Marcado", "U_CTAEXENTO",
-        "U_RD_AUXILIAR1", "U_RD_AUXILIAR2", "U_RD_AUXILIAR3", "U_RD_AUXILIAR4",
-        "U_TASA", "U_CUF", "U_GIFTCARD", "U_ICE", "U_RD_NRO_OT"
-      ) VALUES (
-        ?, ?,
-        ?, ?, ?,
-        ?, ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, ?,
-        ?, ?, ?,
-        ?, ?, 0,
-        ?, ?,
-        ?, ?, ?,
-        ?, ?, ?,
-        ?, ?, ?, ?,
-        ?, ?, ?, ?,
-        ?, ?, ?,
-        0, ?,
-        ?, ?, ?, ?,
-        ?, ?, ?, ?, ?
-      )`,
-      [
-        idRendicion,        idUsuario,
-        dto.cuenta          ?? null,  dto.nombreCuenta  ?? null,  dto.concepto,
-        dto.importe,        dto.descuento,                        dto.tasaCero    ?? 0,
-        dto.n1              ?? '',    dto.n2            ?? '',    dto.n3          ?? '',
-        dto.n4              ?? '',    dto.n5            ?? '',
-        dto.proyecto        ?? null,  dto.fecha,
-        dto.idTipoDoc,      dto.idDoc ?? null,                    dto.tipoDoc,
-        dto.partida         ?? null,  dto.exento        ?? 0,
-        // U_RD_Estado = 0 hardcodeado arriba
-        dto.impRet          ?? 0,     dto.total         ?? null,
-        dto.numDocumento    ?? null,  dto.nroAutor      ?? null,  dto.ctrl        ?? null,
-        dto.nit,            dto.codProv ?? null,                  dto.prov        ?? null,
-        dto.montoIVA,       dto.montoIT,       dto.montoIUE,      dto.montoRCIVA,
-        dto.cuentaIVA       ?? null,  dto.cuentaIT      ?? null,
-        dto.cuentaIUE       ?? null,  dto.cuentaRCIVA   ?? null,
-        dto.importeBs       ?? null,  dto.exentoBs      ?? null,  dto.desctoBs    ?? null,
-        // U_RD_Marcado = 0 hardcodeado arriba
-        dto.ctaExento,
-        dto.auxiliar1       ?? '',    dto.auxiliar2     ?? '',
-        dto.auxiliar3       ?? '',    dto.auxiliar4     ?? '',
-        dto.tasa            ?? null,  dto.cuf           ?? null,
-        dto.giftCard        ?? null,  dto.ice,          dto.nroOT ?? '',
-      ],
+          "U_RD_IdRD",
+          "U_RD_RM_IdRendicion", "U_RD_IdUsuario",
+          "U_RD_Cuenta", "U_RD_NombreCuenta", "U_RD_Concepto",
+          "U_RD_Importe", "U_RD_Descuento", "U_RD_TasaCero",
+          "U_RD_N1", "U_RD_N2", "U_RD_N3", "U_RD_N4", "U_RD_N5",
+          "U_RD_Proyecto", "U_RD_Fecha",
+          "U_RD_IdTipoDoc", "U_RD_IdDoc", "U_RD_TipoDoc",
+          "U_RD_Partida", "U_RD_Exento", "U_RD_Estado",
+          "U_RD_ImpRet", "U_RD_Total",
+          "U_RD_NumDocumento", "U_RD_NroAutor", "U_RD_Ctrl",
+          "U_RD_NIT", "U_RD_CodProv", "U_RD_Prov",
+          "U_MontoIVA", "U_MontoIT", "U_MontoIUE", "U_MontoRCIVA",
+          "U_CuentaIVA", "U_CuentaIT", "U_CuentaIUE", "U_CuentaRCIVA",
+          "U_ImporteBs", "U_EXENTOBS", "U_DESCTOBS",
+          "U_RD_Marcado", "U_CTAEXENTO",
+          "U_RD_AUXILIAR1", "U_RD_AUXILIAR2", "U_RD_AUXILIAR3", "U_RD_AUXILIAR4",
+          "U_TASA", "U_CUF", "U_GIFTCARD", "U_ICE", "U_RD_NRO_OT"
+        ) VALUES (
+          ?,
+          ?, ?,
+          ?, ?, ?,
+          ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?,
+          ?, ?, ?,
+          ?, ?, 0,
+          ?, ?,
+          ?, ?, ?,
+          ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?,
+          0, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?, ?, ?
+        )`,
+        [
+          newId,
+          idRendicion,        idUsuario,
+          dto.cuenta          ?? null,  dto.nombreCuenta  ?? null,  dto.concepto,
+          dto.importe,        dto.descuento,                        dto.tasaCero    ?? 0,
+          dto.n1              ?? '',    dto.n2            ?? '',    dto.n3          ?? '',
+          dto.n4              ?? '',    dto.n5            ?? '',
+          dto.proyecto        ?? null,  dto.fecha,
+          dto.idTipoDoc,      dto.idDoc ?? null,                    dto.tipoDoc,
+          dto.partida         ?? null,  dto.exento        ?? 0,
+          // U_RD_Estado = 0 hardcodeado arriba
+          dto.impRet          ?? 0,     dto.total         ?? null,
+          dto.numDocumento    ?? null,  dto.nroAutor      ?? null,  dto.ctrl        ?? null,
+          dto.nit,            dto.codProv ?? null,                  dto.prov        ?? null,
+          dto.montoIVA,       dto.montoIT,       dto.montoIUE,      dto.montoRCIVA,
+          dto.cuentaIVA       ?? null,  dto.cuentaIT      ?? null,
+          dto.cuentaIUE       ?? null,  dto.cuentaRCIVA   ?? null,
+          dto.importeBs       ?? null,  dto.exentoBs      ?? null,  dto.desctoBs    ?? null,
+          // U_RD_Marcado = 0 hardcodeado arriba
+          dto.ctaExento       ?? '',
+          dto.auxiliar1       ?? '',    dto.auxiliar2     ?? '',
+          dto.auxiliar3       ?? '',    dto.auxiliar4     ?? '',
+          dto.tasa            ?? null,  dto.cuf           ?? null,
+          dto.giftCard        ?? null,  dto.ice,          dto.nroOT ?? '',
+        ],
     );
 
-    const idRows = await this.hanaService.query<Record<string, number>>(
-      `SELECT CURRENT_IDENTITY_VALUE() AS "newId" FROM DUMMY`,
-    );
-    const newId = HanaService.col(idRows[0], 'newId');
     this.logger.log(`REND_D creado: ID ${newId} — rendición ${idRendicion}`);
     return this.findOne(newId);
   }
@@ -185,7 +221,7 @@ export class RendDHanaRepository implements IRendDRepository {
     if (!setParts.length) return { affected: 0 };
 
     params.push(idRD);
-    const affected = await this.hanaService.execute(
+    const affected = await this.db.execute(
       `UPDATE ${this.DB} SET ${setParts.join(', ')} WHERE "U_RD_IdRD" = ?`,
       params,
     );
@@ -193,7 +229,7 @@ export class RendDHanaRepository implements IRendDRepository {
   }
 
   async remove(idRD: number): Promise<{ affected: number }> {
-    const affected = await this.hanaService.execute(
+    const affected = await this.db.execute(
       `DELETE FROM ${this.DB} WHERE "U_RD_IdRD" = ?`,
       [idRD],
     );

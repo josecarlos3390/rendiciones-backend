@@ -141,9 +141,9 @@ export class CreateRendDDto {
   @IsString() @IsOptional() @MaxLength(50)
   cuentaRCIVA?: string;
 
-  @ApiProperty({ description: 'Cuenta de exento', maxLength: 25 })
-  @IsString() @IsNotEmpty() @MaxLength(25)
-  ctaExento: string;
+  @ApiPropertyOptional({ description: 'Cuenta de exento', maxLength: 25 })
+  @IsString() @IsOptional() @MaxLength(25)
+  ctaExento?: string;
 
   // ── Proveedor ────────────────────────────────────────────────
 

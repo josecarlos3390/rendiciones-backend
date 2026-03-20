@@ -6,6 +6,10 @@ export interface JwtPayload {
   appRend:    string;   // REND_U.U_AppRend  — acceso a rendiciones
   appConf:    string;   // REND_U.U_AppConf  — acceso a configuracion
   fijarSaldo: string;   // REND_U.U_FIJARSALDO — '1'=debe fijar monto, '0'=opcional
+  fijarNr:    string;   // REND_U.U_FIJARNR — '1'=normas preconfiguradas fijas
+  nr1:        string;   // REND_U.U_NR1 — norma reparto 1 preconfigurada
+  nr2:        string;   // REND_U.U_NR2 — norma reparto 2 preconfigurada
+  nr3:        string;   // REND_U.U_NR3 — norma reparto 3 preconfigurada
   iat?:       number;
   exp?:       number;
 }

@@ -2,10 +2,9 @@ import { Module } from '@nestjs/common';
 import { PerfilesService }          from './perfiles.service';
 import { PerfilesController }       from './perfiles.controller';
 import { PerfilesHanaRepository }   from './repositories/perfiles.hana.repository';
-import { DatabaseModule }           from '../../database/database.module';
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [],
   controllers: [PerfilesController],
   providers: [
     PerfilesService,

@@ -1,10 +1,11 @@
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
+import { Injectable, UnauthorizedException, Logger, Inject } from '@nestjs/common';
+import { JwtService }    from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { HanaService } from '../database/hana.service';
-import { LoginDto } from './dto/login.dto';
-import { JwtPayload } from './interfaces/jwt-payload.interface';
+import { IDatabaseService, DATABASE_SERVICE } from '../database/interfaces/database.interface';
+import { LoginDto }      from './dto/login.dto';
+import { JwtPayload }    from './interfaces/jwt-payload.interface';
 import * as bcrypt from 'bcryptjs';
+import { tbl } from '../database/db-table.helper';
 
 @Injectable()
 export class AuthService {
@@ -14,7 +15,8 @@ export class AuthService {
     '$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012';
 
   constructor(
-    private readonly hanaService:   HanaService,
+    @Inject(DATABASE_SERVICE)
+    private readonly db:            IDatabaseService,
     private readonly jwtService:    JwtService,
     private readonly configService: ConfigService,
   ) {}
@@ -23,8 +25,12 @@ export class AuthService {
     return this.configService.get<string>('hana.schema');
   }
 
+  private get dbType(): string {
+    return this.configService.get<string>('app.dbType', 'HANA').toUpperCase();
+  }
+
   private get DB(): string {
-    return `"${this.schema}"."REND_U"`;
+    return tbl(this.schema, 'REND_U', this.dbType);
   }
 
   private toRole(superUser: number): string {
@@ -35,9 +41,10 @@ export class AuthService {
     const { password } = dto;
     const username = dto.username.trim().toLowerCase();
 
-    const rows = await this.hanaService.query<any>(
+    const rows = await this.db.query<any>(
       `SELECT "U_IdU", "U_Login", "U_Pass", "U_SuperUser", "U_NomUser",
-              "U_Estado", "U_AppRend", "U_AppConf", "U_FIJARSALDO", "U_FECHAEXPIRACION"
+              "U_Estado", "U_AppRend", "U_AppConf", "U_FIJARSALDO", "U_FECHAEXPIRACION",
+              "U_FIJARNR", "U_NR1", "U_NR2", "U_NR3"
        FROM ${this.DB}
        WHERE LOWER("U_Login") = ?`,
       [username],
@@ -53,18 +60,22 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales invalidas');
     }
 
-    const col = HanaService.col.bind(null, user);
+    const col = (name: string) => this.db.col(user, name);
 
-    const pass      = col('U_Pass');
-    const estado    = col('U_Estado');
-    const expDate   = col('U_FECHAEXPIRACION');
-    const idU       = col('U_IdU');
-    const login     = col('U_Login');
-    const nomUser    = col('U_NomUser')     ?? '';
-    const superUser  = col('U_SuperUser')   ?? 0;
-    const appRend    = col('U_AppRend')     ?? 'N';
-    const appConf    = col('U_AppConf')     ?? 'N';
-    const fijarSaldo = col('U_FIJARSALDO')  ?? '0';
+    const pass       = col('U_Pass');
+    const estado     = col('U_Estado');
+    const expDate    = col('U_FECHAEXPIRACION');
+    const idU        = col('U_IdU');
+    const login      = col('U_Login');
+    const nomUser    = col('U_NomUser')    ?? '';
+    const superUser  = col('U_SuperUser')  ?? 0;
+    const appRend    = col('U_AppRend')    ?? 'N';
+    const appConf    = col('U_AppConf')    ?? 'N';
+    const fijarSaldo = col('U_FIJARSALDO') ?? '0';
+    const fijarNr    = col('U_FIJARNR')    ?? '0';
+    const nr1        = col('U_NR1')        ?? '';
+    const nr2        = col('U_NR2')        ?? '';
+    const nr3        = col('U_NR3')        ?? '';
 
     const isValid = await bcrypt.compare(password, pass ?? '');
     this.logger.debug(`bcrypt.compare: ${isValid}`);
@@ -86,6 +97,7 @@ export class AuthService {
     const payload: JwtPayload = {
       sub: idU, username: login, name: nomUser,
       role: this.toRole(superUser), appRend, appConf, fijarSaldo,
+      fijarNr, nr1, nr2, nr3,
     };
 
     return {
@@ -95,9 +107,10 @@ export class AuthService {
   }
 
   async refreshToken(userId: number) {
-    const rows = await this.hanaService.query<any>(
+    const rows = await this.db.query<any>(
       `SELECT "U_IdU", "U_Login", "U_SuperUser", "U_NomUser",
-              "U_Estado", "U_AppRend", "U_AppConf", "U_FIJARSALDO", "U_FECHAEXPIRACION"
+              "U_Estado", "U_AppRend", "U_AppConf", "U_FIJARSALDO", "U_FECHAEXPIRACION",
+              "U_FIJARNR", "U_NR1", "U_NR2", "U_NR3"
        FROM ${this.DB}
        WHERE "U_IdU" = ?`,
       [userId],
@@ -106,17 +119,21 @@ export class AuthService {
     const user = rows[0];
     if (!user) throw new UnauthorizedException('Usuario no valido');
 
-    const col = HanaService.col.bind(null, user);
+    const col = (name: string) => this.db.col(user, name);
 
-    const estado    = col('U_Estado');
-    const expDate   = col('U_FECHAEXPIRACION');
-    const idU       = col('U_IdU');
-    const login     = col('U_Login');
-    const nomUser    = col('U_NomUser')     ?? '';
-    const superUser  = col('U_SuperUser')   ?? 0;
-    const appRend    = col('U_AppRend')     ?? 'N';
-    const appConf    = col('U_AppConf')     ?? 'N';
-    const fijarSaldo = col('U_FIJARSALDO')  ?? '0';
+    const estado     = col('U_Estado');
+    const expDate    = col('U_FECHAEXPIRACION');
+    const idU        = col('U_IdU');
+    const login      = col('U_Login');
+    const nomUser    = col('U_NomUser')    ?? '';
+    const superUser  = col('U_SuperUser')  ?? 0;
+    const appRend    = col('U_AppRend')    ?? 'N';
+    const appConf    = col('U_AppConf')    ?? 'N';
+    const fijarSaldo = col('U_FIJARSALDO') ?? '0';
+    const fijarNr    = col('U_FIJARNR')    ?? '0';
+    const nr1        = col('U_NR1')        ?? '';
+    const nr2        = col('U_NR2')        ?? '';
+    const nr3        = col('U_NR3')        ?? '';
 
     if (estado !== '1') throw new UnauthorizedException('Tu cuenta esta inactiva. Contacta al administrador.');
     if (new Date(expDate) < new Date()) throw new UnauthorizedException('Tu cuenta ha expirado. Contacta al administrador.');
@@ -124,6 +141,7 @@ export class AuthService {
     const payload: JwtPayload = {
       sub: idU, username: login, name: nomUser,
       role: this.toRole(superUser), appRend, appConf, fijarSaldo,
+      fijarNr, nr1, nr2, nr3,
     };
 
     return { access_token: this.jwtService.sign(payload) };

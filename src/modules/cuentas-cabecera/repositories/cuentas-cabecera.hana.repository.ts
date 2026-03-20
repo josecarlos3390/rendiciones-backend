@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HanaService } from '../../../database/hana.service';
+import { Inject } from '@nestjs/common';
+import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
+import { tbl } from '../../../database/db-table.helper';
 import { ICuentasCabeceraRepository } from './cuentas-cabecera.repository.interface';
 import { CuentaCabecera } from '../interfaces/cuenta-cabecera.interface';
 import { CreateCuentaCabeceraDto } from '../dto/create-cuenta-cabecera.dto';
@@ -10,16 +12,21 @@ export class CuentasCabeceraHanaRepository implements ICuentasCabeceraRepository
   private readonly logger = new Logger(CuentasCabeceraHanaRepository.name);
 
   private get schema(): string { return this.configService.get<string>('hana.schema'); }
-  private get DB(): string      { return `"${this.schema}"."REND_CTA_M"`; }
-  private get DB_PERF(): string { return `"${this.schema}"."REND_PERFIL"`; }
+  private get dbType(): string {
+    return this.configService.get<string>('app.dbType', 'HANA').toUpperCase();
+  }
+
+  private get DB(): string      { return tbl(this.schema, 'REND_CTA_M', this.dbType); }
+  private get DB_PERF(): string      { return tbl(this.schema, 'REND_PERFIL', this.dbType); }
 
   constructor(
-    private readonly hanaService:   HanaService,
+    @Inject(DATABASE_SERVICE)
+    private readonly db: IDatabaseService,
     private readonly configService: ConfigService,
   ) {}
 
   async findAll(): Promise<CuentaCabecera[]> {
-    return this.hanaService.query<CuentaCabecera>(
+    return this.db.query<CuentaCabecera>(
       `SELECT c."U_IdPerfil", c."U_CuentaSys", c."U_CuentaFormatCode",
               c."U_CuentaNombre", c."U_CuentaAsociada", p."U_NombrePerfil"
        FROM ${this.DB} c
@@ -29,7 +36,7 @@ export class CuentasCabeceraHanaRepository implements ICuentasCabeceraRepository
   }
 
   async findByPerfil(idPerfil: number): Promise<CuentaCabecera[]> {
-    return this.hanaService.query<CuentaCabecera>(
+    return this.db.query<CuentaCabecera>(
       `SELECT "U_IdPerfil", "U_CuentaSys", "U_CuentaFormatCode",
               "U_CuentaNombre", "U_CuentaAsociada"
        FROM ${this.DB}
@@ -40,7 +47,7 @@ export class CuentasCabeceraHanaRepository implements ICuentasCabeceraRepository
   }
 
   async create(dto: CreateCuentaCabeceraDto): Promise<CuentaCabecera> {
-    await this.hanaService.execute(
+    await this.db.execute(
       `INSERT INTO ${this.DB}
          ("U_IdPerfil", "U_CuentaSys", "U_CuentaFormatCode", "U_CuentaNombre", "U_CuentaAsociada")
        VALUES (?, ?, ?, ?, ?)`,
@@ -52,7 +59,7 @@ export class CuentasCabeceraHanaRepository implements ICuentasCabeceraRepository
         dto.cuentaAsociada ?? 'N',
       ],
     );
-    const rows = await this.hanaService.query<CuentaCabecera>(
+    const rows = await this.db.query<CuentaCabecera>(
       `SELECT "U_IdPerfil", "U_CuentaSys", "U_CuentaFormatCode",
               "U_CuentaNombre", "U_CuentaAsociada"
        FROM ${this.DB}
@@ -63,7 +70,7 @@ export class CuentasCabeceraHanaRepository implements ICuentasCabeceraRepository
   }
 
   async remove(idPerfil: number, cuentaSys: string): Promise<{ affected: number }> {
-    const affected = await this.hanaService.execute(
+    const affected = await this.db.execute(
       `DELETE FROM ${this.DB} WHERE "U_IdPerfil" = ? AND "U_CuentaSys" = ?`,
       [idPerfil, cuentaSys],
     );
@@ -71,7 +78,7 @@ export class CuentasCabeceraHanaRepository implements ICuentasCabeceraRepository
   }
 
   async exists(idPerfil: number, cuentaSys: string): Promise<boolean> {
-    const rows = await this.hanaService.query<any>(
+    const rows = await this.db.query<any>(
       `SELECT 1 FROM ${this.DB} WHERE "U_IdPerfil" = ? AND "U_CuentaSys" = ?`,
       [idPerfil, cuentaSys],
     );

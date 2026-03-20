@@ -43,7 +43,7 @@ export class RendDController {
   ) {
     return this.rendDService.create(
       idRendicion,
-      req.user.sub,
+      Number(req.user.sub),
       req.user.role,
       String(req.user.sub),
       dto,
