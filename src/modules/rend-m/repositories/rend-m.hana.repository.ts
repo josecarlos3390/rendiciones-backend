@@ -2,12 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Inject } from '@nestjs/common';
 import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
-import { tbl } from '../../../database/db-table.helper';
 import { IRendMRepository } from './rend-m.repository.interface';
 import { RendM } from '../interfaces/rend-m.interface';
 import { CreateRendMDto } from '../dto/create-rend-m.dto';
 import { UpdateRendMDto } from '../dto/update-rend-m.dto';
 import { PaginatedResult } from '../../../common/dto/pagination.dto';
+import { tbl } from '../../../database/db-table.helper';
 
 const SAFE_COLS = `
   "U_IdRendicion", "U_IdUsuario", "U_IdPerfil",
@@ -25,14 +25,10 @@ export class RendMHanaRepository implements IRendMRepository {
   private get schema(): string {
     return this.configService.get<string>('hana.schema');
   }
-  private get dbType(): string {
-    return this.configService.get<string>('app.dbType', 'HANA').toUpperCase();
-  }
 
-
-  private get DB(): string {
-    return tbl(this.schema, 'REND_M', this.dbType);
-  }
+  private get dbType(): string { return this.configService.get<string>('app.dbType', 'HANA').toUpperCase(); }
+  private get DB(): string   { return tbl(this.schema, 'REND_M', this.dbType); }
+  private get DB_D(): string { return tbl(this.schema, 'REND_D', this.dbType); }
 
   constructor(
     @Inject(DATABASE_SERVICE)
@@ -173,6 +169,12 @@ export class RendMHanaRepository implements IRendMRepository {
   }
 
   async remove(id: number): Promise<{ affected: number }> {
+    // Primero eliminar todas las líneas de la rendición
+    await this.db.execute(
+      `DELETE FROM ${this.DB_D} WHERE "U_RD_RM_IdRendicion" = ?`,
+      [id],
+    );
+    // Luego eliminar la cabecera
     const affected = await this.db.execute(
       `DELETE FROM ${this.DB} WHERE "U_IdRendicion" = ?`,
       [id],

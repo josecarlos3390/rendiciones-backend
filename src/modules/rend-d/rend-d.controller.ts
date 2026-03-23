@@ -28,8 +28,11 @@ export class RendDController {
   @Get(':idRD')
   @Roles('ADMIN', 'USER')
   @ApiOperation({ summary: 'Obtener documento por ID' })
-  findOne(@Param('idRD', ParseIntPipe) idRD: number) {
-    return this.rendDService.findOne(idRD);
+  findOne(
+    @Param('idRendicion', ParseIntPipe) idRendicion: number,
+    @Param('idRD', ParseIntPipe) idRD: number,
+  ) {
+    return this.rendDService.findOne(idRendicion, idRD);
   }
 
   @Post()
@@ -54,20 +57,22 @@ export class RendDController {
   @Roles('ADMIN', 'USER')
   @ApiOperation({ summary: 'Editar documento' })
   update(
+    @Param('idRendicion', ParseIntPipe) idRendicion: number,
     @Param('idRD', ParseIntPipe) idRD: number,
     @Body() dto: UpdateRendDDto,
     @Req() req: any,
   ) {
-    return this.rendDService.update(idRD, dto, req.user.role, String(req.user.sub));
+    return this.rendDService.update(idRendicion, idRD, dto, req.user.role, String(req.user.sub));
   }
 
   @Delete(':idRD')
   @Roles('ADMIN', 'USER')
   @ApiOperation({ summary: 'Eliminar documento' })
   remove(
+    @Param('idRendicion', ParseIntPipe) idRendicion: number,
     @Param('idRD', ParseIntPipe) idRD: number,
     @Req() req: any,
   ) {
-    return this.rendDService.remove(idRD, req.user.role, String(req.user.sub));
+    return this.rendDService.remove(idRendicion, idRD, req.user.role, String(req.user.sub));
   }
 }

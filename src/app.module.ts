@@ -28,6 +28,7 @@ import appConfig       from './config/app.config';
 import sqlserverConfig from './config/sqlserver.config';
 import postgresConfig  from './config/postgres.config';
 import { loggerConfig } from './config/logger.config';
+import { FacturaModule } from './modules/factura/factura.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { loggerConfig } from './config/logger.config';
     SapModule,
     AppConfigModule,
     OfflineModule,
+    FacturaModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

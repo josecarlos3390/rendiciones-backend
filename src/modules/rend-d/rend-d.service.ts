@@ -26,9 +26,9 @@ export class RendDService {
     return this.repo.findByRendicion(idRendicion);
   }
 
-  async findOne(idRD: number) {
-    const row = await this.repo.findOne(idRD);
-    if (!row) throw new NotFoundException(`Documento con ID ${idRD} no encontrado`);
+  async findOne(idRendicion: number, idRD: number) {
+    const row = await this.repo.findOne(idRendicion, idRD);
+    if (!row) throw new NotFoundException(`Documento ${idRD} no encontrado en rendición ${idRendicion}`);
     return row;
   }
 
@@ -46,29 +46,26 @@ export class RendDService {
     return result;
   }
 
-  async update(idRD: number, dto: UpdateRendDDto, role: string, idUsuario: string) {
-    const doc = await this.findOne(idRD);
-    // Verificar acceso a la rendición padre
-    const cabecera = await this.rendMService.findOne(doc.U_RD_RM_IdRendicion);
+  async update(idRendicion: number, idRD: number, dto: UpdateRendDDto, role: string, idUsuario: string) {
+    const cabecera = await this.rendMService.findOne(idRendicion);
     if (role !== 'ADMIN' && cabecera.U_IdUsuario !== idUsuario) {
       throw new ForbiddenException('No tienes acceso a esta rendición');
     }
     if (role !== 'ADMIN' && cabecera.U_Estado !== 1) {
       throw new ForbiddenException('Solo se pueden editar documentos de rendiciones en estado ABIERTO');
     }
-    await this.repo.update(idRD, dto);
-    return this.findOne(idRD);
+    await this.repo.update(idRendicion, idRD, dto);
+    return this.findOne(idRendicion, idRD);
   }
 
-  async remove(idRD: number, role: string, idUsuario: string) {
-    const doc = await this.findOne(idRD);
-    const cabecera = await this.rendMService.findOne(doc.U_RD_RM_IdRendicion);
+  async remove(idRendicion: number, idRD: number, role: string, idUsuario: string) {
+    const cabecera = await this.rendMService.findOne(idRendicion);
     if (role !== 'ADMIN' && cabecera.U_IdUsuario !== idUsuario) {
       throw new ForbiddenException('No tienes acceso a esta rendición');
     }
     if (role !== 'ADMIN' && cabecera.U_Estado !== 1) {
       throw new ForbiddenException('Solo se pueden eliminar documentos de rendiciones en estado ABIERTO');
     }
-    return this.repo.remove(idRD);
+    return this.repo.remove(idRendicion, idRD);
   }
 }
