@@ -1,5 +1,7 @@
 import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Inject, Optional } from '@nestjs/common';
+import { IDatabaseService, DATABASE_SERVICE } from '../../database/interfaces/database.interface';
 import * as https from 'https';
 
 // ── Interfaces Service Layer ──────────────────────────────────────────────────
@@ -96,7 +98,12 @@ export class SapService {
   private rulesCache: CacheEntry<SLDistributionRule[]>    | null = null;
   private coaCache:   CacheEntry<ChartOfAccountDto[]>      | null = null;
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    @Optional() @Inject(DATABASE_SERVICE) private readonly db?: IDatabaseService,
+  ) {}
+
+  private get dbType(): string { return (this.config.get<string>('app.dbType') ?? 'HANA').toUpperCase(); }
 
   private get slBaseUrl(): string {
     return (this.config.get<string>('SAP_SL_URL') ?? '').replace(/\/$/, '');
@@ -158,6 +165,23 @@ export class SapService {
    * Paginamos en loop para traer todo (SAP SL devuelve máx 20 por defecto)
    */
   async getChartOfAccounts(): Promise<ChartOfAccountDto[]> {
+    // En modo Postgres/Offline usar REND_COA en lugar de SAP SL
+    if (this.dbType === 'POSTGRES' && this.db) {
+      const schema = this.config.get<string>('hana.schema') ?? 'rend_retail';
+      const rows = await this.db.query<any>(
+        `SELECT "COA_CODE", "COA_NAME", "COA_FORMAT_CODE", "COA_ASOCIADA"
+         FROM "${schema}"."REND_COA"
+         WHERE "COA_ACTIVA" = 'Y'
+         ORDER BY "COA_FORMAT_CODE"`,
+      );
+      return rows.map((r: any) => ({
+        code:       r.COA_CODE       ?? r.coa_code,
+        name:       r.COA_NAME       ?? r.coa_name,
+        formatCode: r.COA_FORMAT_CODE ?? r.coa_format_code ?? r.COA_CODE ?? r.coa_code,
+        lockManual: (r.COA_ASOCIADA ?? r.coa_asociada) === 'Y' ? 'tYES' : 'tNO',
+      }));
+    }
+
     if (this.coaCache && Date.now() < this.coaCache.expiresAt) {
       this.logger.debug('ChartOfAccounts desde caché');
       return this.coaCache.data;

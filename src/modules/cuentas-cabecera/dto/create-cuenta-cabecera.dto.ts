@@ -15,11 +15,11 @@ export class CreateCuentaCabeceraDto {
   @MaxLength(50)
   cuentaSys: string;
 
-  @ApiProperty({ description: 'Código formato de la cuenta', maxLength: 50 })
+  @ApiPropertyOptional({ description: 'Código formato de la cuenta', maxLength: 50 })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(50)
-  cuentaFormatCode: string;
+  cuentaFormatCode?: string;
 
   @ApiProperty({ description: 'Nombre de la cuenta', maxLength: 150 })
   @IsString()

@@ -14,4 +14,6 @@ export interface IRendMRepository {
   create(dto: CreateRendMDto, idUsuario: string, nomUsuario: string, nombrePerfil: string): Promise<RendM | null>;
   update(id: number, dto: UpdateRendMDto): Promise<{ affected: number }>;
   remove(id: number): Promise<{ affected: number }>;
+  updateEstado(id: number, estado: number): Promise<void>;
+  getStats(idUsuario: string, isAdmin: boolean): Promise<any>;
 }

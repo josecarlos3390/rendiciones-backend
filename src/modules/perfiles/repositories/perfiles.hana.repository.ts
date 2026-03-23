@@ -2,11 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Inject } from '@nestjs/common';
 import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
-import { tbl } from '../../../database/db-table.helper';
 import { IPerfilesRepository } from './perfiles.repository.interface';
 import { Perfil } from '../interfaces/perfil.interface';
 import { CreatePerfilDto } from '../dto/create-perfil.dto';
 import { UpdatePerfilDto } from '../dto/update-perfil.dto';
+import { tbl } from '../../../database/db-table.helper';
 
 const SAFE_COLS = `
   "U_CodPerfil", "U_NombrePerfil", "U_Trabaja", "U_Per_CtaBl",
@@ -19,17 +19,12 @@ const SAFE_COLS = `
 export class PerfilesHanaRepository implements IPerfilesRepository {
   private readonly logger = new Logger(PerfilesHanaRepository.name);
 
+  private get dbType(): string  { return this.configService.get<string>('app.dbType', 'HANA').toUpperCase(); }
   private get schema(): string {
     return this.configService.get<string>('hana.schema');
   }
-  private get dbType(): string {
-    return this.configService.get<string>('app.dbType', 'HANA').toUpperCase();
-  }
 
-
-  private get DB(): string {
-    return tbl(this.schema, 'REND_PERFIL', this.dbType);
-  }
+  private get DB(): string      { return tbl(this.schema, 'REND_PERFIL', this.dbType); }
 
   constructor(
     @Inject(DATABASE_SERVICE)

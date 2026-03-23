@@ -1,11 +1,11 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService }      from '@nestjs/config';
 import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
-import { tbl } from '../../../database/db-table.helper';
 import { IUsersRepository }   from './users.repository.interface';
 import { RendU }              from '../interfaces/rend-u.interface';
 import { CreateUserDto }      from '../dto/create-user.dto';
 import { UpdateUserDto }      from '../dto/update-user.dto';
+import { tbl } from '../../../database/db-table.helper';
 
 const SAFE_COLS = `
   "U_IdU", "U_Login", "U_NomUser", "U_NomSup", "U_SuperUser",
@@ -16,17 +16,12 @@ const SAFE_COLS = `
 
 @Injectable()
 export class UsersHanaRepository implements IUsersRepository {
+  private get dbType(): string  { return this.configService.get<string>('app.dbType', 'HANA').toUpperCase(); }
   private get schema(): string {
     return this.configService.get<string>('hana.schema');
   }
-  private get dbType(): string {
-    return this.configService.get<string>('app.dbType', 'HANA').toUpperCase();
-  }
 
-
-  private get DB(): string {
-    return tbl(this.schema, 'REND_U', this.dbType);
-  }
+  private get DB(): string      { return tbl(this.schema, 'REND_U', this.dbType); }
 
   constructor(
     @Inject(DATABASE_SERVICE)

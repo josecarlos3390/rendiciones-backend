@@ -2,20 +2,20 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Inject } from '@nestjs/common';
 import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
-import { tbl } from '../../../database/db-table.helper';
 import { IPermisosRepository } from './permisos.repository.interface';
 import { Permiso, UsuarioSimple } from '../interfaces/permiso.interface';
 import { CreatePermisoDto } from '../dto/create-permiso.dto';
+import { tbl } from '../../../database/db-table.helper';
 
 @Injectable()
 export class PermisosHanaRepository implements IPermisosRepository {
   private readonly logger = new Logger(PermisosHanaRepository.name);
 
-  private get schema(): string  { return this.configService.get<string>('hana.schema'); }
   private get dbType(): string  { return this.configService.get<string>('app.dbType', 'HANA').toUpperCase(); }
+  private get schema(): string  { return this.configService.get<string>('hana.schema'); }
   private get DB(): string      { return tbl(this.schema, 'REND_PRM', this.dbType); }
-  private get DB_USR(): string  { return tbl(this.schema, 'REND_U', this.dbType); }
-  private get DB_PERF(): string { return tbl(this.schema, 'REND_PERFIL', this.dbType); }
+  private get DB_USR(): string      { return tbl(this.schema, 'REND_U', this.dbType); }
+  private get DB_PERF(): string      { return tbl(this.schema, 'REND_PERFIL', this.dbType); }
 
   constructor(
     @Inject(DATABASE_SERVICE)

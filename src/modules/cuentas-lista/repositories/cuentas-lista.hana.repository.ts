@@ -2,22 +2,19 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Inject } from '@nestjs/common';
 import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
-import { tbl } from '../../../database/db-table.helper';
 import { ICuentasListaRepository } from './cuentas-lista.repository.interface';
 import { CuentaLista, CuentaListaDetalle } from '../interfaces/cuenta-lista.interface';
 import { CreateCuentaListaDto } from '../dto/create-cuenta-lista.dto';
+import { tbl } from '../../../database/db-table.helper';
 
 @Injectable()
 export class CuentasListaHanaRepository implements ICuentasListaRepository {
   private readonly logger = new Logger(CuentasListaHanaRepository.name);
 
+  private get dbType(): string  { return this.configService.get<string>('app.dbType', 'HANA').toUpperCase(); }
   private get schema(): string {
     return this.configService.get<string>('hana.schema');
   }
-  private get dbType(): string {
-    return this.configService.get<string>('app.dbType', 'HANA').toUpperCase();
-  }
-
   private get DB(): string      { return tbl(this.schema, 'REND_CTA_L', this.dbType); }
   private get DB_PERF(): string      { return tbl(this.schema, 'REND_PERFIL', this.dbType); }
 

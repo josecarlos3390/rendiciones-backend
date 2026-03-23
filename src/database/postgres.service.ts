@@ -24,7 +24,7 @@ import { IDatabaseService } from './interfaces/database.interface';
 export class PostgresService implements IDatabaseService, OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PostgresService.name);
   private pool: Pool;
-  private poolReady = false;  // ← agregar esta línea
+  private poolReady = false; // guard contra doble inicialización
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -32,13 +32,12 @@ export class PostgresService implements IDatabaseService, OnModuleInit, OnModule
 
   async onModuleInit() {
     const dbType = this.configService.get<string>('app.dbType', 'HANA').toUpperCase();
-    if (dbType !== 'POSTGRES' || this.poolReady) return;  // ← agregar || this.poolReady
-    this.poolReady = true;  // ← agregar esta línea
+    if (dbType !== 'POSTGRES' || this.poolReady) return;
+    this.poolReady = true;
     await this.createPool();
   }
 
   async onModuleDestroy() {
-    if (!this.poolReady) return;  // ← agregar esta línea
     await this.destroyPool();
   }
 

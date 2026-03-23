@@ -54,6 +54,28 @@ export class FacturaService {
     return this.normalize(data.objeto ?? {});
   }
 
+  /** Normaliza la fecha del SIAT a formato YYYY-MM-DD para el input type="date" */
+  private normalizarFecha(raw: string | null | undefined): string | null {
+    if (!raw) return null;
+    try {
+      // Formato boliviano: dd/MM/yyyy HH:mm o dd/MM/yyyy
+      if (/^\d{2}\/\d{2}\/\d{4}/.test(raw)) {
+        const [d, m, y] = raw.substring(0, 10).split('/');
+        return `${y}-${m}-${d}`;
+      }
+      // ISO: yyyy-MM-ddTHH:mm o yyyy-MM-dd
+      if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+        return raw.substring(0, 10);
+      }
+      // Intentar con Date
+      const date = new Date(raw);
+      if (!isNaN(date.getTime())) {
+        return date.toISOString().substring(0, 10);
+      }
+    } catch { /* ignorar */ }
+    return null;
+  }
+
   private parseQrUrl(rawUrl: string): { cuf: string; nit: string; numero: string } {
     try {
       // El QR puede contener la URL directa o la versión "middle page" con t=2
@@ -84,7 +106,7 @@ export class FacturaService {
       clientName:    obj.nombreRazonSocial ?? '',
       clientDoc:     String(obj.numeroDocumento ?? ''),
       status:        obj.estadoFactura    ?? '',
-      datetime:      obj.fechaEmision     ?? null,
+      datetime:      this.normalizarFecha(obj.fechaEmision),
       total:         obj.montoTotal       ?? 0,
     };
   }

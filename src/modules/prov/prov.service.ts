@@ -2,11 +2,6 @@ import { Injectable, Inject, ConflictException, NotFoundException } from '@nestj
 import { IProvRepository, PROV_REPOSITORY } from './repositories/prov.repository.interface';
 import { CreateProvDto } from './dto/create-prov.dto';
 
-export interface UpdateProvData {
-  nit?:         string;
-  razonSocial?: string;
-}
-
 @Injectable()
 export class ProvService {
   constructor(
@@ -14,30 +9,28 @@ export class ProvService {
     private readonly repo: IProvRepository,
   ) {}
 
-  findAll(tipo?: string) {
-    return this.repo.findAll(tipo);
+  findAll() { return this.repo.findAll(); }
+
+  async findByNit(nit: string) {
+    return this.repo.findByNit(nit) ?? null;
   }
 
-  async create(dto: CreateProvDto) {
-    // Evitar NIT duplicado dentro del mismo tipo
-    if (dto.nit) {
-      const exists = await this.repo.findByNit(dto.nit);
-      if (exists && exists.U_TIPO === dto.tipo) {
-        throw new ConflictException(`El NIT "${dto.nit}" ya está registrado como ${dto.tipo}`);
-      }
-    }
+  /** Busca por NIT — si no existe lo crea y lo devuelve */
+  async findOrCreate(dto: CreateProvDto) {
+    const existing = await this.repo.findByNit(dto.nit);
+    if (existing) return existing;
     return this.repo.create(dto);
   }
 
-  async update(codigo: string, data: UpdateProvData) {
-    const exists = await this.repo.findByCodigo(codigo);
-    if (!exists) throw new NotFoundException(`Código "${codigo}" no encontrado`);
-    return this.repo.updateByCodigo(codigo, data);
+  async create(dto: CreateProvDto) {
+    const exists = await this.repo.findByNit(dto.nit);
+    if (exists) throw new ConflictException(`El NIT "${dto.nit}" ya está registrado`);
+    return this.repo.create(dto);
   }
 
-  async remove(codigo: string) {
-    const exists = await this.repo.findByCodigo(codigo);
-    if (!exists) throw new NotFoundException(`Código "${codigo}" no encontrado`);
-    return this.repo.remove(codigo);
+  async remove(nit: string) {
+    const exists = await this.repo.findByNit(nit);
+    if (!exists) throw new NotFoundException(`NIT "${nit}" no encontrado`);
+    return this.repo.remove(nit);
   }
 }

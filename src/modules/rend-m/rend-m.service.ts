@@ -64,6 +64,15 @@ export class RendMService {
     return this.findOne(id);
   }
 
+  async getStats(idUsuario: string, isAdmin: boolean) {
+    return this.repo.getStats(idUsuario, isAdmin);
+  }
+
+  /** Cambia el estado de la rendición — usado por el módulo de aprobaciones */
+  async updateEstado(id: number, estado: number): Promise<void> {
+    await this.repo.updateEstado(id, estado);
+  }
+
   async remove(id: number, role: string, idUsuario: string) {
     const row = await this.findOne(id);
 

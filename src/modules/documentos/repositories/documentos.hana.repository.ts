@@ -2,20 +2,20 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Inject } from '@nestjs/common';
 import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
-import { tbl } from '../../../database/db-table.helper';
 import { IDocumentosRepository } from './documentos.repository.interface';
 import { Documento } from '../interfaces/documento.interface';
 import { CreateDocumentoDto } from '../dto/create-documento.dto';
 import { UpdateDocumentoDto } from '../dto/update-documento.dto';
+import { tbl } from '../../../database/db-table.helper';
 
 @Injectable()
 export class DocumentosHanaRepository implements IDocumentosRepository {
   private readonly logger = new Logger(DocumentosHanaRepository.name);
 
-  private get schema(): string  { return this.configService.get<string>('hana.schema'); }
   private get dbType(): string  { return this.configService.get<string>('app.dbType', 'HANA').toUpperCase(); }
-  private get DB(): string      { return tbl(this.schema, 'REND_CTA',    this.dbType); }
-  private get DB_PERF(): string { return tbl(this.schema, 'REND_PERFIL', this.dbType); }
+  private get schema(): string  { return this.configService.get<string>('hana.schema'); }
+  private get DB(): string      { return tbl(this.schema, 'REND_CTA', this.dbType); }
+  private get DB_PERF(): string      { return tbl(this.schema, 'REND_PERFIL', this.dbType); }
 
   constructor(
     @Inject(DATABASE_SERVICE)
@@ -33,43 +33,29 @@ export class DocumentosHanaRepository implements IDocumentosRepository {
     d."U_CTAEXENTO", d."U_TASA", d."U_ICE",
     p."U_NombrePerfil"`;
 
-  /**
-   * Postgres devuelve columnas DECIMAL/NUMERIC como strings.
-   * Este método normaliza todos los campos numéricos a number
-   * para que las comparaciones del frontend (=== -1, > 0, etc.) funcionen
-   * independientemente del motor de base de datos.
-   */
-  private normalize(row: any): Documento {
+  private norm(row: any): Documento {
+    const c = (n: string) => this.db.col(row, n);
     return {
-      ...row,
-      U_IdDocumento:   Number(this.db.col(row, 'U_IdDocumento')),
-      U_CodPerfil:     Number(this.db.col(row, 'U_CodPerfil')),
-      U_IdTipoDoc:     Number(this.db.col(row, 'U_IdTipoDoc')),
-      U_EXENTOpercent: Number(this.db.col(row, 'U_EXENTOpercent')),
-      U_IVApercent:    this._toNumberOrNull(this.db.col(row, 'U_IVApercent')),
-      U_ITpercent:     this._toNumberOrNull(this.db.col(row, 'U_ITpercent')),
-      U_IUEpercent:    this._toNumberOrNull(this.db.col(row, 'U_IUEpercent')),
-      U_RCIVApercent:  this._toNumberOrNull(this.db.col(row, 'U_RCIVApercent')),
-      U_TASA:          this._toNumberOrNull(this.db.col(row, 'U_TASA')),
-      U_ICE:           Number(this.db.col(row, 'U_ICE') ?? 0),
-      U_TipoCalc:      String(this.db.col(row, 'U_TipoCalc') ?? '0'),
-      U_TipDoc:        this.db.col(row, 'U_TipDoc')        ?? '',
-      U_IVAcuenta:     this.db.col(row, 'U_IVAcuenta')     ?? '',
-      U_ITcuenta:      this.db.col(row, 'U_ITcuenta')      ?? '',
-      U_IUEcuenta:     this.db.col(row, 'U_IUEcuenta')     ?? '',
-      U_RCIVAcuenta:   this.db.col(row, 'U_RCIVAcuenta')   ?? '',
-      U_CTAEXENTO:     this.db.col(row, 'U_CTAEXENTO')     ?? '',
-      U_NombrePerfil:  this.db.col(row, 'U_NombrePerfil')  ?? '',
+      U_IdDocumento:   Number(c('U_IdDocumento')),
+      U_CodPerfil:     Number(c('U_CodPerfil')),
+      U_TipDoc:        c('U_TipDoc')        ?? '',
+      U_EXENTOpercent: Number(c('U_EXENTOpercent')) || 0,
+      U_IdTipoDoc:     Number(c('U_IdTipoDoc'))     || 0,
+      U_TipoCalc:      c('U_TipoCalc')      ?? '0',
+      U_IVApercent:    Number(c('U_IVApercent'))    || 0,
+      U_IVAcuenta:     c('U_IVAcuenta')     ?? '',
+      U_ITpercent:     Number(c('U_ITpercent'))     || 0,
+      U_ITcuenta:      c('U_ITcuenta')      ?? '',
+      U_IUEpercent:    Number(c('U_IUEpercent'))    || 0,
+      U_IUEcuenta:     c('U_IUEcuenta')     ?? '',
+      U_RCIVApercent:  Number(c('U_RCIVApercent'))  || 0,
+      U_RCIVAcuenta:   c('U_RCIVAcuenta')   ?? '',
+      U_CTAEXENTO:     c('U_CTAEXENTO')     ?? '',
+      U_TASA:          Number(c('U_TASA'))          || 0,
+      U_ICE:           Number(c('U_ICE'))           || 0,
+      U_NombrePerfil:  c('U_NombrePerfil')  ?? undefined,
     };
   }
-
-  private _toNumberOrNull(val: any): number | null {
-    if (val === null || val === undefined || val === '') return null;
-    const n = Number(val);
-    return isNaN(n) ? null : n;
-  }
-
-  // ── Consultas ─────────────────────────────────────────────────
 
   async findAll(): Promise<Documento[]> {
     const rows = await this.db.query<any>(
@@ -78,7 +64,7 @@ export class DocumentosHanaRepository implements IDocumentosRepository {
        LEFT JOIN ${this.DB_PERF} p ON p."U_CodPerfil" = d."U_CodPerfil"
        ORDER BY d."U_CodPerfil", d."U_TipDoc"`,
     );
-    return rows.map(r => this.normalize(r));
+    return rows.map(r => this.norm(r));
   }
 
   async findByPerfil(codPerfil: number): Promise<Documento[]> {
@@ -90,7 +76,7 @@ export class DocumentosHanaRepository implements IDocumentosRepository {
        ORDER BY d."U_TipDoc"`,
       [codPerfil],
     );
-    return rows.map(r => this.normalize(r));
+    return rows.map(r => this.norm(r));
   }
 
   async findOne(id: number): Promise<Documento | null> {
@@ -101,16 +87,15 @@ export class DocumentosHanaRepository implements IDocumentosRepository {
        WHERE d."U_IdDocumento" = ?`,
       [id],
     );
-    return rows[0] ? this.normalize(rows[0]) : null;
+    return rows[0] ? this.norm(rows[0]) : null;
   }
 
-  // ── Mutaciones ────────────────────────────────────────────────
-
   async create(dto: CreateDocumentoDto): Promise<Documento> {
+    // Obtener el siguiente ID
     const seqRows = await this.db.query<any>(
       `SELECT COALESCE(MAX("U_IdDocumento"), 0) + 1 AS NEXT_ID FROM ${this.DB}`,
     );
-    const nextId = Number(this.db.col(seqRows[0], 'NEXT_ID')) || 1;
+    const nextId = seqRows[0]?.NEXT_ID ?? 1;
 
     await this.db.execute(
       `INSERT INTO ${this.DB} (
@@ -142,6 +127,8 @@ export class DocumentosHanaRepository implements IDocumentosRepository {
   }
 
   async update(id: number, dto: UpdateDocumentoDto): Promise<Documento> {
+    const current = await this.findOne(id);
+
     const sets: string[] = [];
     const params: any[]  = [];
 

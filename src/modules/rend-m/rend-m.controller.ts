@@ -41,6 +41,14 @@ export class RendMController {
     );
   }
 
+  @Get('stats')
+  @Roles('ADMIN', 'USER')
+  @ApiOperation({ summary: 'Estadísticas de rendiciones para el dashboard' })
+  getStats(@Req() req: any) {
+    const isAdmin = req.user.role === 'ADMIN';
+    return this.rendMService.getStats(String(req.user.sub), isAdmin);
+  }
+
   @Get(':id')
   @Roles('ADMIN', 'USER')
   @ApiOperation({ summary: 'Obtener cabecera de rendición por ID' })

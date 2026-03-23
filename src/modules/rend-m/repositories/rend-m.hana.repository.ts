@@ -8,6 +8,7 @@ import { CreateRendMDto } from '../dto/create-rend-m.dto';
 import { UpdateRendMDto } from '../dto/update-rend-m.dto';
 import { PaginatedResult } from '../../../common/dto/pagination.dto';
 import { tbl } from '../../../database/db-table.helper';
+import { getTableMutex } from '../../../common/utils/db-mutex';
 
 const SAFE_COLS = `
   "U_IdRendicion", "U_IdUsuario", "U_IdPerfil",
@@ -22,13 +23,13 @@ const SAFE_COLS = `
 export class RendMHanaRepository implements IRendMRepository {
   private readonly logger = new Logger(RendMHanaRepository.name);
 
+  private get dbType(): string  { return this.configService.get<string>('app.dbType', 'HANA').toUpperCase(); }
   private get schema(): string {
     return this.configService.get<string>('hana.schema');
   }
 
-  private get dbType(): string { return this.configService.get<string>('app.dbType', 'HANA').toUpperCase(); }
-  private get DB(): string   { return tbl(this.schema, 'REND_M', this.dbType); }
-  private get DB_D(): string { return tbl(this.schema, 'REND_D', this.dbType); }
+  private get DB(): string      { return tbl(this.schema, 'REND_M', this.dbType); }
+  private get DB_D(): string    { return tbl(this.schema, 'REND_D', this.dbType); }
 
   constructor(
     @Inject(DATABASE_SERVICE)
@@ -90,50 +91,52 @@ export class RendMHanaRepository implements IRendMRepository {
     nomUsuario:   string,
     nombrePerfil: string,
   ): Promise<RendM | null> {
-    const now = new Date().toISOString();
+    const mutex = getTableMutex('REND_M');
 
-    // REND_M no tiene columna IDENTITY — generar el ID manualmente con MAX+1
-    const idRows = await this.db.query<Record<string, number>>(
-      `SELECT COALESCE(MAX("U_IdRendicion"), 0) + 1 AS "newId" FROM ${this.DB}`,
-    );
-    const newId = this.db.col(idRows[0], 'newId');
+    return mutex.runExclusive(async () => {
+      const now = new Date().toISOString();
 
-    await this.db.execute(
-      `INSERT INTO ${this.DB}
-         ("U_IdRendicion",
-          "U_IdUsuario", "U_IdPerfil", "U_NomUsuario", "U_NombrePerfil",
-          "U_Preliminar", "U_Estado",
-          "U_Cuenta", "U_NombreCuenta", "U_Empleado", "U_NombreEmpleado",
-          "U_FechaIni", "U_FechaFinal", "U_Monto", "U_Objetivo",
-          "U_FechaCreacion", "U_FechaMod",
-          "U_AUXILIAR1", "U_AUXILIAR2", "U_AUXILIAR3")
-       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        newId,
-        idUsuario,
-        dto.idPerfil,
-        nomUsuario,
-        nombrePerfil,
-        '-1',               // U_Preliminar: -1 por defecto hasta generar doc preliminar
-        // U_Estado 1 = ABIERTO al crear
-        dto.cuenta,
-        dto.nombreCuenta,
-        dto.empleado       ?? '',
-        dto.nombreEmpleado ?? '',
-        dto.fechaIni,
-        dto.fechaFinal,
-        dto.monto,
-        dto.objetivo,
-        now,
-        now,
-        dto.auxiliar1     ?? '',
-        dto.auxiliar2     ?? '',
-        dto.auxiliar3     ?? '',
-      ],
-    );
+      const idRows = await this.db.query<Record<string, number>>(
+        `SELECT COALESCE(MAX("U_IdRendicion"), 0) + 1 AS "newId" FROM ${this.DB}`,
+      );
+      const newId = this.db.col(idRows[0], 'newId');
 
-    this.logger.log(`REND_M creada: ID ${newId} — usuario ${idUsuario}`);
-    return this.findOne(newId);
+      await this.db.execute(
+        `INSERT INTO ${this.DB}
+          ("U_IdRendicion",
+            "U_IdUsuario", "U_IdPerfil", "U_NomUsuario", "U_NombrePerfil",
+            "U_Preliminar", "U_Estado",
+            "U_Cuenta", "U_NombreCuenta", "U_Empleado", "U_NombreEmpleado",
+            "U_FechaIni", "U_FechaFinal", "U_Monto", "U_Objetivo",
+            "U_FechaCreacion", "U_FechaMod",
+            "U_AUXILIAR1", "U_AUXILIAR2", "U_AUXILIAR3")
+        VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          newId,
+          idUsuario,
+          dto.idPerfil,
+          nomUsuario,
+          nombrePerfil,
+          '-1',
+          dto.cuenta,
+          dto.nombreCuenta,
+          dto.empleado       ?? '',
+          dto.nombreEmpleado ?? '',
+          dto.fechaIni,
+          dto.fechaFinal,
+          dto.monto,
+          dto.objetivo,
+          now,
+          now,
+          dto.auxiliar1     ?? '',
+          dto.auxiliar2     ?? '',
+          dto.auxiliar3     ?? '',
+        ],
+      );
+
+      this.logger.log(`REND_M creada: ID ${newId} — usuario ${idUsuario}`);
+      return this.findOne(newId);
+    });
   }
 
   async update(id: number, dto: UpdateRendMDto): Promise<{ affected: number }> {
@@ -166,6 +169,53 @@ export class RendMHanaRepository implements IRendMRepository {
       params,
     );
     return { affected };
+  }
+
+  async updateEstado(id: number, estado: number): Promise<void> {
+    await this.db.execute(
+      `UPDATE ${this.DB} SET "U_Estado" = ? WHERE "U_IdRendicion" = ?`,
+      [estado, id],
+    );
+  }
+
+  async getStats(idUsuario: string, isAdmin: boolean): Promise<any> {
+    // Siempre consultar las propias del usuario
+    const rowsUser = await this.db.query<any>(
+      `SELECT
+        COUNT(*) AS "total",
+        SUM(CASE WHEN "U_Estado" = 1 THEN 1 ELSE 0 END) AS "abiertas",
+        SUM(CASE WHEN "U_Estado" = 4 THEN 1 ELSE 0 END) AS "enviadas",
+        SUM(CASE WHEN "U_Estado" = 3 THEN 1 ELSE 0 END) AS "aprobadas",
+        SUM(CASE WHEN "U_Estado" = 2 THEN 1 ELSE 0 END) AS "cerradas",
+        SUM(CASE WHEN "U_Estado" = 5 THEN 1 ELSE 0 END) AS "sincronizadas",
+        COALESCE(SUM("U_Monto"), 0) AS "montoTotal"
+      FROM ${this.DB} WHERE "U_IdUsuario" = ?`,
+      [idUsuario],
+    );
+    const r = rowsUser[0];
+    const stats: any = {
+      total:         Number(this.db.col(r, 'total'))         || 0,
+      abiertas:      Number(this.db.col(r, 'abiertas'))      || 0,
+      enviadas:      Number(this.db.col(r, 'enviadas'))      || 0,
+      aprobadas:     Number(this.db.col(r, 'aprobadas'))     || 0,
+      cerradas:      Number(this.db.col(r, 'cerradas'))      || 0,
+      sincronizadas: Number(this.db.col(r, 'sincronizadas')) || 0,
+      montoTotal:    Number(this.db.col(r, 'montoTotal'))    || 0,
+    };
+
+    // Si es ADMIN, agregar totales globales del sistema
+    if (isAdmin) {
+      const rowsAll = await this.db.query<any>(
+        `SELECT COUNT(*) AS "totalGlobal",
+                COALESCE(SUM("U_Monto"), 0) AS "montoGlobal"
+         FROM ${this.DB}`,
+      );
+      const ra = rowsAll[0];
+      stats.totalGlobal  = Number(this.db.col(ra, 'totalGlobal'))  || 0;
+      stats.montoGlobal  = Number(this.db.col(ra, 'montoGlobal'))  || 0;
+    }
+
+    return stats;
   }
 
   async remove(id: number): Promise<{ affected: number }> {

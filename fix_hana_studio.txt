@@ -12,3 +12,91 @@ SELECT MAX("U_RD_IdRD") FROM "REND_RETAIL_QA2"."REND_D";
 -- 2. Reiniciar la secuencia desde ese valor + 1
 -- (reemplaza XXXX con el resultado del paso anterior + 1)
 ALTER SEQUENCE "REND_RETAIL_QA2"."REND_D_SEQ" RESTART WITH XXXX;
+
+
+------------------------------------------
+-- PARA HANA STUDIO ----
+-- TABLA PARA AUTORIZACIONES---
+
+-- ══ Para HANA ejecutar: ══════════════════════════════════════════
+ CREATE TABLE "REND_RETAIL_QA2"."REND_APROBACION" (
+   "U_IdRendicion"  INTEGER       NOT NULL,
+   "U_Nivel"        INTEGER       NOT NULL,
+   "U_LoginAprob"   NVARCHAR(10)  NOT NULL,
+   "U_NomAprob"     NVARCHAR(100) NOT NULL DEFAULT '',
+   "U_Estado"       NVARCHAR(10)  NOT NULL DEFAULT 'PENDIENTE',
+   "U_FechaAprob"   TIMESTAMP     NULL,
+   "U_Comentario"   NVARCHAR(500) NULL,
+   PRIMARY KEY ("U_IdRendicion", "U_Nivel")
+ );
+
+
+ ------ CONSIDERAR----------
+ -- Si el 2 actual es CERRADO y quieres moverlo a 4:
+UPDATE rend_retail."REND_M" SET "U_Estado" = 4 WHERE "U_Estado" = 2;
+
+
+FLUJO APROBACIONES
+--------------------
+Los datos existentes en la BD no se tocan. El único estado nuevo es el 3=APROBADO que se asigna 
+cuando todos los niveles aprueban. El flujo completo: 1→4→3→2 (Abierto → Enviado → Aprobado → Cerrado/Sincronizado).
+------------------
+MEJORANDO TIPO DOCUMENTO SAP
+------------------------------
+U_IdTipo     INTEGER PK   -- código SAP (1, 4, 10...)
+U_Nombre     VARCHAR(100) -- "Factura de Compra", "Recibo de Alquiler"
+U_EsTipoF    CHAR(1)      -- 'F'=Factura, 'R'=Recibo (determina lógica _recalcular)
+U_PermiteGU  CHAR(1)      -- 'Y'/'N' permite Grossing Up
+U_PermiteGD  CHAR(1)      -- 'Y'/'N' permite Grossing Down
+U_Orden      INTEGER      -- orden en el selector
+U_Activo     CHAR(1)      -- 'Y'/'N'
+
+-------------------------------------------------------
+CONSULTA SQL
+------------------------------
+-- ══ REND_TIPO_DOC_SAP — Tipos de documento SAP administrables ══
+-- Ejecutar en PostgreSQL:
+CREATE TABLE IF NOT EXISTS rend_retail."REND_TIPO_DOC_SAP" (
+  "U_IdTipo"    INTEGER       NOT NULL,
+  "U_Nombre"    VARCHAR(100)  NOT NULL,
+  "U_EsTipoF"   CHAR(1)       NOT NULL DEFAULT 'F', -- 'F'=Factura 'R'=Recibo
+  "U_PermiteGU" CHAR(1)       NOT NULL DEFAULT 'N', -- Grossing Up
+  "U_PermiteGD" CHAR(1)       NOT NULL DEFAULT 'N', -- Grossing Down
+  "U_Orden"     INTEGER       NOT NULL DEFAULT 0,
+  "U_Activo"    CHAR(1)       NOT NULL DEFAULT 'Y',
+  PRIMARY KEY ("U_IdTipo")
+);
+
+-- Datos iniciales (reemplazan los valores quemados en código)
+INSERT INTO rend_retail."REND_TIPO_DOC_SAP"
+  ("U_IdTipo","U_Nombre","U_EsTipoF","U_PermiteGU","U_PermiteGD","U_Orden","U_Activo")
+VALUES
+  (1,  'Factura de Compra',          'F', 'N', 'N', 1, 'Y'),
+  (4,  'Recibo de Alquiler',         'R', 'Y', 'Y', 2, 'Y'),
+  (10, 'Recibo sin especificación',  'R', 'Y', 'Y', 3, 'Y')
+ON CONFLICT ("U_IdTipo") DO NOTHING;
+
+-- ══ Para HANA:
+ CREATE TABLE "SCHEMA"."REND_TIPO_DOC_SAP" (
+   "U_IdTipo"    INTEGER        NOT NULL,
+   "U_Nombre"    NVARCHAR(100)  NOT NULL,
+   "U_EsTipoF"   NCHAR(1)       NOT NULL DEFAULT 'F',
+   "U_PermiteGU" NCHAR(1)       NOT NULL DEFAULT 'N',
+   "U_PermiteGD" NCHAR(1)       NOT NULL DEFAULT 'N',
+   "U_Orden"     INTEGER        NOT NULL DEFAULT 0,
+   "U_Activo"    NCHAR(1)       NOT NULL DEFAULT 'Y',
+   PRIMARY KEY ("U_IdTipo")
+ );
+
+ -- PARA HANA SINCRONIZACION SAP B1--
+ CREATE TABLE "TU_SCHEMA"."REND_SYNC" (
+  "U_IdSync"        INTEGER        NOT NULL,
+  "U_IdRendicion"   INTEGER        NOT NULL,
+  "U_Estado"        NVARCHAR(20)   NOT NULL DEFAULT 'PENDIENTE',
+  "U_NroDocERP"     NVARCHAR(50),
+  "U_FechaSync"     TIMESTAMP,
+  "U_LoginAdmin"    NVARCHAR(50),
+  "U_Mensaje"       NVARCHAR(500),
+  "U_Intento"       INTEGER        NOT NULL DEFAULT 1,
+  PRIMARY KEY ("U_IdSync")
+);

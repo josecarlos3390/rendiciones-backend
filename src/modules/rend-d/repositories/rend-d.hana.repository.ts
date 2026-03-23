@@ -7,6 +7,7 @@ import { IRendDRepository } from './rend-d.repository.interface';
 import { RendD } from '../interfaces/rend-d.interface';
 import { CreateRendDDto } from '../dto/create-rend-d.dto';
 import { UpdateRendDDto } from '../dto/update-rend-d.dto';
+import { getTableMutex } from '../../../common/utils/db-mutex';
 
 const SAFE_COLS = `
   "U_RD_IdRD", "U_RD_RM_IdRendicion", "U_RD_IdUsuario",
@@ -62,7 +63,10 @@ export class RendDHanaRepository implements IRendDRepository {
 
   private _str(row: any, col: string, fallback = ''): string {
     const v = this.db.col(row, col);
-    return v !== null && v !== undefined ? String(v) : fallback;
+    if (v === null || v === undefined) return fallback;
+    // Postgres devuelve fechas como objetos Date — convertir a YYYY-MM-DD
+    if (v instanceof Date) return v.toISOString().substring(0, 10);
+    return String(v);
   }
 
   private normalize(row: any): RendD {
@@ -146,83 +150,79 @@ export class RendDHanaRepository implements IRendDRepository {
   // ── Mutaciones ────────────────────────────────────────────────
 
   async create(idRendicion: number, idUsuario: number, dto: CreateRendDDto): Promise<RendD | null> {
-    // Número de línea correlativo dentro de la rendición — 1, 2, 3...
-    // Usamos COUNT en lugar de MAX para que rendiciones existentes con IDs
-    // altos (del sequence anterior) también obtengan numeración correlativa.
-    // Ej: rendición con docs 193,194 → próximo newId = COUNT(2) + 1 = 3
-    const idRows = await this.db.query<Record<string, number>>(
-      `SELECT COUNT(*) + 1 AS "newId"
-       FROM ${this.DB}
-       WHERE "U_RD_RM_IdRendicion" = ?`,
-      [idRendicion],
-    );
-    const newId = Number(this.db.col(idRows[0], 'newId')) || 1;
+    const mutex = getTableMutex('REND_D');
 
-    await this.db.execute(
-      `INSERT INTO ${this.DB} (
-          "U_RD_IdRD",
-          "U_RD_RM_IdRendicion", "U_RD_IdUsuario",
-          "U_RD_Cuenta", "U_RD_NombreCuenta", "U_RD_Concepto",
-          "U_RD_Importe", "U_RD_Descuento", "U_RD_TasaCero",
-          "U_RD_N1", "U_RD_N2", "U_RD_N3", "U_RD_N4", "U_RD_N5",
-          "U_RD_Proyecto", "U_RD_Fecha",
-          "U_RD_IdTipoDoc", "U_RD_IdDoc", "U_RD_TipoDoc",
-          "U_RD_Partida", "U_RD_Exento", "U_RD_Estado",
-          "U_RD_ImpRet", "U_RD_Total",
-          "U_RD_NumDocumento", "U_RD_NroAutor", "U_RD_Ctrl",
-          "U_RD_NIT", "U_RD_CodProv", "U_RD_Prov",
-          "U_MontoIVA", "U_MontoIT", "U_MontoIUE", "U_MontoRCIVA",
-          "U_CuentaIVA", "U_CuentaIT", "U_CuentaIUE", "U_CuentaRCIVA",
-          "U_ImporteBs", "U_EXENTOBS", "U_DESCTOBS",
-          "U_RD_Marcado", "U_CTAEXENTO",
-          "U_RD_AUXILIAR1", "U_RD_AUXILIAR2", "U_RD_AUXILIAR3", "U_RD_AUXILIAR4",
-          "U_TASA", "U_CUF", "U_GIFTCARD", "U_ICE", "U_RD_NRO_OT"
-        ) VALUES (
-          ?,
-          ?, ?,
-          ?, ?, ?,
-          ?, ?, ?,
-          ?, ?, ?, ?, ?,
-          ?, ?,
-          ?, ?, ?,
-          ?, ?, 0,
-          ?, ?,
-          ?, ?, ?,
-          ?, ?, ?,
-          ?, ?, ?, ?,
-          ?, ?, ?, ?,
-          ?, ?, ?,
-          0, ?,
-          ?, ?, ?, ?,
-          ?, ?, ?, ?, ?
-        )`,
-      [
-        newId,
-        idRendicion,        idUsuario,
-        dto.cuenta          ?? null,  dto.nombreCuenta  ?? null,  dto.concepto,
-        dto.importe,        dto.descuento,                        dto.tasaCero    ?? 0,
-        dto.n1              ?? '',    dto.n2            ?? '',    dto.n3          ?? '',
-        dto.n4              ?? '',    dto.n5            ?? '',
-        dto.proyecto        ?? null,  dto.fecha,
-        dto.idTipoDoc,      dto.idDoc ?? null,                    dto.tipoDoc,
-        dto.partida         ?? null,  dto.exento        ?? 0,
-        dto.impRet          ?? 0,     dto.total         ?? null,
-        dto.numDocumento    ?? null,  dto.nroAutor      ?? null,  dto.ctrl        ?? null,
-        dto.nit,            dto.codProv ?? null,                  dto.prov        ?? null,
-        dto.montoIVA,       dto.montoIT,       dto.montoIUE,      dto.montoRCIVA,
-        dto.cuentaIVA       ?? null,  dto.cuentaIT      ?? null,
-        dto.cuentaIUE       ?? null,  dto.cuentaRCIVA   ?? null,
-        dto.importeBs       ?? null,  dto.exentoBs      ?? null,  dto.desctoBs    ?? null,
-        dto.ctaExento       ?? '',
-        dto.auxiliar1       ?? '',    dto.auxiliar2     ?? '',
-        dto.auxiliar3       ?? '',    dto.auxiliar4     ?? '',
-        dto.tasa            ?? null,  dto.cuf           ?? null,
-        dto.giftCard        ?? null,  dto.ice,          dto.nroOT ?? '',
-      ],
-    );
+    return mutex.runExclusive(async () => {
+      const idRows = await this.db.query<Record<string, number>>(
+        `SELECT COALESCE(MAX("U_RD_IdRD"), 0) + 1 AS "newId"
+        FROM ${this.DB}
+        WHERE "U_RD_RM_IdRendicion" = ?`,
+        [idRendicion],
+      );
+      const newId = Number(this.db.col(idRows[0], 'newId')) || 1;
 
-    this.logger.log(`REND_D creado: ID ${newId} — rendición ${idRendicion}`);
-    return this.findOne(idRendicion, newId);
+      await this.db.execute(
+        `INSERT INTO ${this.DB} (
+            "U_RD_IdRD",
+            "U_RD_RM_IdRendicion", "U_RD_IdUsuario",
+            "U_RD_Cuenta", "U_RD_NombreCuenta", "U_RD_Concepto",
+            "U_RD_Importe", "U_RD_Descuento", "U_RD_TasaCero",
+            "U_RD_N1", "U_RD_N2", "U_RD_N3", "U_RD_N4", "U_RD_N5",
+            "U_RD_Proyecto", "U_RD_Fecha",
+            "U_RD_IdTipoDoc", "U_RD_IdDoc", "U_RD_TipoDoc",
+            "U_RD_Partida", "U_RD_Exento", "U_RD_Estado",
+            "U_RD_ImpRet", "U_RD_Total",
+            "U_RD_NumDocumento", "U_RD_NroAutor", "U_RD_Ctrl",
+            "U_RD_NIT", "U_RD_CodProv", "U_RD_Prov",
+            "U_MontoIVA", "U_MontoIT", "U_MontoIUE", "U_MontoRCIVA",
+            "U_CuentaIVA", "U_CuentaIT", "U_CuentaIUE", "U_CuentaRCIVA",
+            "U_ImporteBs", "U_EXENTOBS", "U_DESCTOBS",
+            "U_RD_Marcado", "U_CTAEXENTO",
+            "U_RD_AUXILIAR1", "U_RD_AUXILIAR2", "U_RD_AUXILIAR3", "U_RD_AUXILIAR4",
+            "U_TASA", "U_CUF", "U_GIFTCARD", "U_ICE", "U_RD_NRO_OT"
+          )
+          VALUES (
+            ?, ?, ?,
+            ?, ?, ?,
+            ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?,
+            ?, ?, ?,
+            ?, ?, ?,
+            ?, ?,
+            ?, ?, ?,
+            ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?,
+            ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?, ?, ?
+          )`,
+        [
+          newId,
+          idRendicion, idUsuario,
+          dto.cuenta        ?? null, dto.nombreCuenta  ?? null, dto.concepto,
+          dto.importe, dto.descuento ?? 0, dto.tasaCero ?? null,
+          dto.n1 ?? null, dto.n2 ?? null, dto.n3 ?? null, dto.n4 ?? null, dto.n5 ?? null,
+          dto.proyecto ?? null, dto.fecha,
+          dto.idTipoDoc, dto.idDoc ?? null, dto.tipoDoc ?? '',
+          dto.partida ?? null, dto.exento ?? null, 1,
+          dto.impRet ?? null, dto.total ?? null,
+          dto.numDocumento ?? null, dto.nroAutor ?? null, dto.ctrl ?? null,
+          dto.nit ?? '', dto.codProv ?? null, dto.prov ?? null,
+          dto.montoIVA ?? null, dto.montoIT ?? null, dto.montoIUE ?? null, dto.montoRCIVA ?? null,
+          dto.cuentaIVA ?? null, dto.cuentaIT ?? null, dto.cuentaIUE ?? null, dto.cuentaRCIVA ?? null,
+          dto.importeBs ?? null, dto.exentoBs ?? null, dto.desctoBs ?? null,
+          '0', dto.ctaExento ?? null,
+          dto.auxiliar1 ?? null, dto.auxiliar2 ?? null, dto.auxiliar3 ?? null, dto.auxiliar4 ?? null,
+          dto.tasa ?? null, dto.cuf ?? null, dto.giftCard ?? null, dto.ice ?? null, dto.nroOT ?? null,
+        ],
+      );
+
+      this.logger.log(`REND_D creado: ID ${newId} — rendición ${idRendicion}`);
+      return this.findOne(idRendicion, newId);
+    });
   }
 
   async update(idRendicion: number, idRD: number, dto: UpdateRendDDto): Promise<{ affected: number }> {

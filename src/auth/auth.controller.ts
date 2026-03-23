@@ -4,6 +4,8 @@ import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { Public } from './decorators/public.decorator';
 import { Roles } from './decorators/roles.decorator';
+import { Throttle } from '@nestjs/throttler';
+
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -16,6 +18,7 @@ export class AuthController {
    */
   @Public()
   @Post('login')
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })  // ← 5 intentos por minuto
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Iniciar sesion' })
   @ApiResponse({ status: 200, description: 'Login exitoso — retorna JWT' })
@@ -29,6 +32,7 @@ export class AuthController {
    * Re-emite el JWT con datos actualizados desde HANA.
    */
   @Post('refresh-token')
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })  // ← más holgado
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Renovar token JWT' })
   refreshToken(@Req() req: any) {

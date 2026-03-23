@@ -9,33 +9,26 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 const logger = new Logger('Bootstrap');
 
 function validateEnv() {
-  const dbType  = (process.env.DB_TYPE  ?? 'HANA').toUpperCase();
-  const appMode = (process.env.APP_MODE ?? 'ONLINE').toUpperCase();
+  const dbType = (process.env.DB_TYPE ?? 'HANA').toUpperCase();
 
-  const base: string[] = ['JWT_SECRET'];
+  // Variables requeridas siempre
+  const alwaysRequired = ['JWT_SECRET'];
 
-  const byEngine: Record<string, string[]> = {
-    HANA:      ['HANA_HOST', 'HANA_USER', 'HANA_PASSWORD', 'HANA_SCHEMA'],
-    SQLSERVER: ['SQL_HOST',  'SQL_USER',  'SQL_PASSWORD',  'SQL_DATABASE'],
-    POSTGRES:  ['PG_HOST',   'PG_USER',   'PG_PASSWORD',   'PG_DATABASE'],
-  };
+  // Variables requeridas solo en modo HANA (online)
+  const hanaRequired = dbType === 'HANA'
+    ? ['HANA_HOST', 'HANA_USER', 'HANA_PASSWORD', 'HANA_SCHEMA']
+    : [];
 
-  const bySapMode: Record<string, string[]> = {
-    ONLINE:  ['SAP_SL_URL', 'SAP_SL_USER', 'SAP_SL_PASSWORD', 'SAP_SL_COMPANY'],
-    OFFLINE: [],
-  };
+  // Variables requeridas solo en modo POSTGRES (offline)
+  const pgRequired = dbType === 'POSTGRES'
+    ? ['PG_HOST', 'PG_USER', 'PG_PASSWORD', 'PG_DATABASE']
+    : [];
 
-  const required = [
-    ...base,
-    ...(byEngine[dbType]    ?? []),
-    ...(bySapMode[appMode]  ?? []),
-  ];
+  const required = [...alwaysRequired, ...hanaRequired, ...pgRequired];
+  const missing  = required.filter((k) => !process.env[k]);
 
-  const missing = required.filter((k) => !process.env[k]);
   if (missing.length > 0) {
-    throw new Error(
-      `Variables de entorno requeridas para DB_TYPE=${dbType} APP_MODE=${appMode}: ${missing.join(', ')}`,
-    );
+    throw new Error(`Variables de entorno requeridas no configuradas: ${missing.join(', ')}`);
   }
 }
 
@@ -76,10 +69,10 @@ async function bootstrap() {
       : (origin: string | undefined, cb: (e: Error | null, allow?: boolean) => void) => {
           const allowed =
             !origin ||
-            /^http:\/\/localhost(:\d+)?$/.test(origin) ||
-            /^http:\/\/192\.168\.\d+\.\d+(:\d+)?$/.test(origin) ||
-            /^http:\/\/172\.\d+\.\d+\.\d+(:\d+)?$/.test(origin) ||
-            /^http:\/\/10\.\d+\.\d+\.\d+(:\d+)?$/.test(origin);
+            /^https?:\/\/localhost(:\d+)?$/.test(origin) ||
+            /^https?:\/\/192\.168\.\d+\.\d+(:\d+)?$/.test(origin) ||
+            /^https?:\/\/172\.\d+\.\d+\.\d+(:\d+)?$/.test(origin) ||
+            /^https?:\/\/10\.\d+\.\d+\.\d+(:\d+)?$/.test(origin);
           cb(null, allowed);
         },
     credentials:    true,
@@ -90,22 +83,18 @@ async function bootstrap() {
   // Swagger
   const swaggerCfg = new DocumentBuilder()
     .setTitle('Rendiciones API')
-    .setDescription('API del sistema de rendiciones')
+    .setDescription('API del sistema de rendiciones — NestJS + SAP HANA')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
   SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, swaggerCfg));
 
-  const port    = process.env.PORT     ?? 3000;
-  const dbType  = process.env.DB_TYPE  ?? 'HANA';
-  const appMode = process.env.APP_MODE ?? 'ONLINE';
-
+  const port = process.env.PORT ?? 3000;
   await app.listen(port, '0.0.0.0');
 
   logger.log(`API:     http://localhost:${port}/api/v1`);
   logger.log(`Swagger: http://localhost:${port}/api/docs`);
-  logger.log(`DB:      ${dbType}`);
-  logger.log(`Mode:    ${appMode}`);
+  logger.log(`DB:      ${process.env.DB_TYPE ?? 'HANA'}`);
 }
 
 bootstrap().catch((err) => {
