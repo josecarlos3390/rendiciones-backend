@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Param, ParseIntPipe, Req } from '@nestjs/common';
+import { Controller, Get, Post, Param, ParseIntPipe, Req, Body } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { IntegracionService } from './integracion.service';
-import { Roles } from '../../auth/decorators/roles.decorator';
-import { Throttle } from '@nestjs/throttler';
+import { SyncRendicionDto }   from './dto/sync-rendicion.dto';
+import { Roles }              from '../../auth/decorators/roles.decorator';
+import { Throttle }           from '@nestjs/throttler';
 
 @ApiTags('Integracion')
 @ApiBearerAuth()
@@ -15,6 +16,13 @@ export class IntegracionController {
   @ApiOperation({ summary: 'Rendiciones APROBADAS pendientes de sincronización con ERP' })
   getPendientes() {
     return this.svc.getPendientes();
+  }
+
+  @Get('mis-rendiciones')
+  @Roles('ADMIN', 'USER')
+  @ApiOperation({ summary: 'Rendiciones del usuario logueado en estados 3 (aprobado), 5 (sync) y 6 (error)' })
+  getMisRendiciones(@Req() req: any) {
+    return this.svc.getMisRendiciones(String(req.user.sub));
   }
 
   @Get('count')
@@ -33,9 +41,19 @@ export class IntegracionController {
 
   @Post(':id/sincronizar')
   @Roles('ADMIN', 'USER')
-  @Throttle({ default: { ttl: 60_000, limit: 3 } })
-  @ApiOperation({ summary: 'Sincronizar rendición con ERP' })
-  sincronizar(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
-    return this.svc.sincronizar(id, req.user.username);
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @ApiOperation({ summary: 'Sincronizar rendición con SAP Business One vía Service Layer' })
+  sincronizar(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SyncRendicionDto,
+    @Req() req: any,
+  ) {
+    return this.svc.sincronizar(
+      id,
+      req.user.username,        // para auditoría en REND_SYNC (U_Login legible)
+      String(req.user.sub),     // para comparar con U_IdUsuario de REND_M
+      req.user.role,
+      dto,
+    );
   }
 }

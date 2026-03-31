@@ -47,6 +47,13 @@ async function bootstrap() {
     whitelist:            true,
     forbidNonWhitelisted: true,
     transform:            true,
+    exceptionFactory: (errors) => {
+      const messages = errors.map(e =>
+        Object.values(e.constraints ?? {}).join(', '),
+      );
+      const { BadRequestException } = require('@nestjs/common');
+      return new BadRequestException(messages);
+    },
   }));
 
   // Filtro global de errores

@@ -6,6 +6,7 @@ import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@ne
 import { CuentasListaService } from './cuentas-lista.service';
 import { CreateCuentaListaDto } from './dto/create-cuenta-lista.dto';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { RequiereConf } from '../../auth/decorators/require-conf.decorator';
 
 @ApiTags('Cuentas Lista')
 @ApiBearerAuth()
@@ -31,6 +32,7 @@ export class CuentasListaController {
     return this.service.findByPerfil(idPerfil);
   }
 
+  @RequiereConf()
   @Post()
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Agregar cuenta a un perfil (solo ADMIN)' })
@@ -40,6 +42,7 @@ export class CuentasListaController {
     return this.service.create(dto);
   }
 
+  @RequiereConf()
   @Delete(':idPerfil/:cuentaSys')
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Eliminar cuenta de un perfil (solo ADMIN)' })

@@ -5,6 +5,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdatePasswordDto } from './dto/update-password.dto';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { RequiereConf } from '../../auth/decorators/require-conf.decorator';
 
 @ApiTags('Users')
 @ApiBearerAuth()
@@ -12,6 +13,7 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
+  @RequiereConf()
   @Post()
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Crear usuario en REND_U (solo ADMIN)' })
@@ -52,6 +54,7 @@ export class UsersController {
     );
   }
 
+  @RequiereConf()
   @Patch(':id')
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Actualizar usuario en REND_U (solo ADMIN)' })

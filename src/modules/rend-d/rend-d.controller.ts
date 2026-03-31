@@ -22,7 +22,14 @@ export class RendDController {
     @Param('idRendicion', ParseIntPipe) idRendicion: number,
     @Req() req: any,
   ) {
-    return this.rendDService.findByRendicion(idRendicion, req.user.role, String(req.user.sub));
+    return this.rendDService.findByRendicion(
+      idRendicion,
+      req.user.role,
+      String(req.user.sub),
+      req.user.username,
+      req.user.esAprobador === true,
+      req.user.nomSup === '' || !req.user.nomSup,   // sinAprobador
+    );
   }
 
   @Get(':idRD')
@@ -31,8 +38,16 @@ export class RendDController {
   findOne(
     @Param('idRendicion', ParseIntPipe) idRendicion: number,
     @Param('idRD', ParseIntPipe) idRD: number,
+    @Req() req: any,
   ) {
-    return this.rendDService.findOne(idRendicion, idRD);
+    return this.rendDService.findOne(
+      idRendicion, idRD,
+      req.user.role,
+      String(req.user.sub),
+      req.user.username,
+      req.user.esAprobador === true,
+      req.user.nomSup === '' || !req.user.nomSup,
+    );
   }
 
   @Post()
@@ -62,7 +77,13 @@ export class RendDController {
     @Body() dto: UpdateRendDDto,
     @Req() req: any,
   ) {
-    return this.rendDService.update(idRendicion, idRD, dto, req.user.role, String(req.user.sub));
+    return this.rendDService.update(
+      idRendicion, idRD, dto,
+      req.user.role,
+      String(req.user.sub),
+      req.user.username,
+      req.user.esAprobador === true,
+    );
   }
 
   @Delete(':idRD')

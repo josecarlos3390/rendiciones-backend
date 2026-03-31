@@ -6,6 +6,7 @@ import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagg
 import { CuentasCabeceraService } from './cuentas-cabecera.service';
 import { CreateCuentaCabeceraDto } from './dto/create-cuenta-cabecera.dto';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { RequiereConf } from '../../auth/decorators/require-conf.decorator';
 
 @ApiTags('Cuentas Cabecera')
 @ApiBearerAuth()
@@ -28,6 +29,7 @@ export class CuentasCabeceraController {
     return this.service.findByPerfil(idPerfil);
   }
 
+  @RequiereConf()
   @Post()
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Agregar cuenta cabecera a un perfil (solo ADMIN)' })
@@ -37,6 +39,7 @@ export class CuentasCabeceraController {
     return this.service.create(dto);
   }
 
+  @RequiereConf()
   @Delete(':idPerfil/:cuentaSys')
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Eliminar cuenta cabecera de un perfil (solo ADMIN)' })

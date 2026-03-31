@@ -23,6 +23,23 @@ export class RendMService {
     return this.repo.findByUser(idUsuario, idPerfil, page, limit);
   }
 
+  /**
+   * Rendiciones de subordinados del aprobador.
+   * estados: array de números (1=abierto, 3=aprobado, 4=enviado, 5=sync, 6=error)
+   * Si estados vacío → todos los estados.
+   */
+  async findSubordinados(
+    loginAprobador:   string,
+    idPerfil:         number | undefined,
+    estados:          number[],
+    page:             number,
+    limit:            number,
+    idUsuarioFiltro?: string,
+    cascada:          boolean = false,
+  ) {
+    return this.repo.findBySubordinados(loginAprobador, idPerfil, estados, page, limit, idUsuarioFiltro, cascada);
+  }
+
   async findOne(id: number) {
     const row = await this.repo.findOne(id);
     if (!row) throw new NotFoundException(`Rendición con ID ${id} no encontrada`);
@@ -47,21 +64,46 @@ export class RendMService {
     return this.repo.create(dto, idUsuario, nomUsuario, nombrePerfil);
   }
 
-  async update(id: number, dto: UpdateRendMDto, role: string, idUsuario: string) {
+  async update(
+    id:              number,
+    dto:             UpdateRendMDto,
+    role:            string,
+    idUsuario:       string,
+    loginAprobador?: string,
+    esAprobador?:    boolean,
+  ) {
     const row = await this.findOne(id);
 
-    // USER solo puede editar sus propias rendiciones en estado ABIERTO (1)
     if (role !== 'ADMIN') {
-      if (row.U_IdUsuario !== idUsuario) {
+      const esPropietario = row.U_IdUsuario === idUsuario;
+
+      if (esPropietario) {
+        // Dueño solo puede editar sus propias en estado ABIERTO
+        if (row.U_Estado !== 1) {
+          throw new ForbiddenException('Solo se pueden editar rendiciones en estado ABIERTO');
+        }
+      } else if (esAprobador && loginAprobador) {
+        // Aprobador puede editar rendiciones de sus subordinados en estado ENVIADO (4)
+        if (row.U_Estado !== 4) {
+          throw new ForbiddenException('El aprobador solo puede editar rendiciones en estado ENVIADO');
+        }
+        // Validar que el dueño de la rendición efectivamente lo tiene como aprobador
+        const esSubordinado = await this.repo.isSubordinado(row.U_IdUsuario, loginAprobador);
+        if (!esSubordinado) {
+          throw new ForbiddenException('No tenés permiso para editar rendiciones de este usuario');
+        }
+      } else {
         throw new ForbiddenException('No puedes editar rendiciones de otro usuario');
-      }
-      if (row.U_Estado !== 1) {
-        throw new ForbiddenException('Solo se pueden editar rendiciones en estado ABIERTO');
       }
     }
 
     await this.repo.update(id, dto);
     return this.findOne(id);
+  }
+
+  /** Verifica si idUsuario tiene a loginAprobador como su aprobador directo */
+  async isSubordinado(idUsuario: string, loginAprobador: string): Promise<boolean> {
+    return this.repo.isSubordinado(idUsuario, loginAprobador);
   }
 
   async getStats(idUsuario: string, isAdmin: boolean) {
@@ -71,6 +113,11 @@ export class RendMService {
   /** Cambia el estado de la rendición — usado por el módulo de aprobaciones */
   async updateEstado(id: number, estado: number): Promise<void> {
     await this.repo.updateEstado(id, estado);
+  }
+
+  /** Guarda el número de documento preliminar SAP en U_Preliminar */
+  async updatePreliminar(id: number, preliminar: string): Promise<void> {
+    await this.repo.updatePreliminar(id, preliminar);
   }
 
   async remove(id: number, role: string, idUsuario: string) {

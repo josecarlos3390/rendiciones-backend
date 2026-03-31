@@ -41,6 +41,50 @@ export class RendMController {
     );
   }
 
+  /**
+   * GET /rend-m/subordinados
+   * Rendiciones de los usuarios cuyo U_NomSup = username del autenticado.
+   * Usado por aprobadores (ver+editar+aprobar) y usuarios con permiso sync.
+   * Query params:
+   *   estados  — coma separados (ej: "1,4" o "3,5,6"). Default: todos.
+   *   idPerfil — filtro opcional de perfil
+   *   idUsuario — filtro opcional por usuario subordinado específico
+   *   page, limit — paginación
+   */
+  @Get('subordinados')
+  @Roles('ADMIN', 'USER')
+  @ApiOperation({ summary: 'Rendiciones de mis subordinados — directos (aprobador) o en cascada (sync)' })
+  findSubordinados(
+    @Req() req: any,
+    @Query('estados')   estadosStr?: string,
+    @Query('idPerfil')  idPerfilStr?: string,
+    @Query('idUsuario') idUsuarioFiltro?: string,
+    @Query('page')      pageStr?: string,
+    @Query('limit')     limitStr?: string,
+  ) {
+    const estados  = estadosStr
+      ? estadosStr.split(',').map(Number).filter(n => !isNaN(n))
+      : [];
+    const idPerfil = idPerfilStr ? Number(idPerfilStr) : undefined;
+    const page     = pageStr  ? Number(pageStr)  : 1;
+    const limit    = limitStr ? Number(limitStr) : 50;
+
+    // Usuario sin aprobador (nivel sync) → cascada completa
+    // Aprobador con aprobador propio    → solo subordinados directos
+    const sinAprobador = !req.user.nomSup?.trim();
+    const cascada      = req.user.role === 'ADMIN' || sinAprobador;
+
+    return this.rendMService.findSubordinados(
+      req.user.username,
+      idPerfil,
+      estados,
+      page,
+      limit,
+      idUsuarioFiltro || undefined,
+      cascada,
+    );
+  }
+
   @Get('stats')
   @Roles('ADMIN', 'USER')
   @ApiOperation({ summary: 'Estadísticas de rendiciones para el dashboard' })
@@ -63,29 +107,24 @@ export class RendMController {
   @ApiOperation({ summary: 'Crear cabecera de rendición' })
   @ApiResponse({ status: 201, description: 'Cabecera creada' })
   async create(@Body() dto: CreateRendMDto, @Req() req: any) {
-    // Resolver el nombre completo del perfil: "<NombrePerfil>-<Trabaja label>"
     const perfil = await this.perfilesService.findOne(dto.idPerfil);
     const trabajaLabel = TRABAJA_LABEL[perfil.U_Trabaja] ?? perfil.U_Trabaja;
     const nombrePerfil = `${perfil.U_NombrePerfil}-${trabajaLabel}`;
-
-    return this.rendMService.create(
-      dto,
-      String(req.user.sub),
-      req.user.name,
-      nombrePerfil,
-    );
+    return this.rendMService.create(dto, String(req.user.sub), req.user.name, nombrePerfil);
   }
 
   @Patch(':id')
   @Roles('ADMIN', 'USER')
-  @ApiOperation({ summary: 'Editar cabecera — USER solo puede editar las suyas en estado ABIERTO' })
+  @ApiOperation({ summary: 'Editar cabecera — USER edita las suyas en ABIERTO; aprobadores pueden editar las de sus subordinados en ENVIADO' })
   @ApiResponse({ status: 200, description: 'Cabecera actualizada' })
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateRendMDto,
     @Req() req: any,
   ) {
-    return this.rendMService.update(id, dto, req.user.role, String(req.user.sub));
+    return this.rendMService.update(
+      id, dto, req.user.role, String(req.user.sub), req.user.username, req.user.esAprobador,
+    );
   }
 
   @Delete(':id')

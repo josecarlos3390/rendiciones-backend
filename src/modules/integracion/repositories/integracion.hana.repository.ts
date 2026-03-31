@@ -45,6 +45,42 @@ export class IntegracionHanaRepository implements IIntegracionRepository {
     return rows.map(r => this.normalize(r));
   }
 
+  async findMisRendiciones(idUsuario: string): Promise<any[]> {
+    const rows = await this.db.query<any>(
+      `SELECT m."U_IdRendicion", m."U_IdUsuario", m."U_NomUsuario",
+              m."U_NombrePerfil", m."U_Objetivo",
+              m."U_FechaIni", m."U_FechaFinal", m."U_Monto", m."U_Estado",
+              s."U_NroDocERP"
+       FROM ${this.DB_M} m
+       LEFT JOIN ${this.DB} s
+         ON s."U_IdRendicion" = m."U_IdRendicion"
+         AND s."U_Estado" = 'OK'
+         AND s."U_IdSync" = (
+           SELECT MAX(s2."U_IdSync") FROM ${this.DB} s2
+           WHERE s2."U_IdRendicion" = m."U_IdRendicion" AND s2."U_Estado" = 'OK'
+         )
+       WHERE m."U_Estado" IN (3, 5, 6)
+         AND m."U_IdUsuario" = ?
+       ORDER BY m."U_FechaMod" DESC`,
+      [idUsuario],
+    );
+    return rows.map(r => {
+      const col = (name: string) => this.db.col(r, name);
+      return {
+        U_IdRendicion: Number(col('U_IdRendicion')),
+        U_IdUsuario:   String(col('U_IdUsuario')),
+        U_NomUsuario:  String(col('U_NomUsuario')   ?? ''),
+        U_NombrePerfil:String(col('U_NombrePerfil') ?? ''),
+        U_Objetivo:    String(col('U_Objetivo')     ?? ''),
+        U_FechaIni:    String(col('U_FechaIni')     ?? ''),
+        U_FechaFinal:  String(col('U_FechaFinal')   ?? ''),
+        U_Monto:       Number(col('U_Monto')        ?? 0),
+        U_Estado:      Number(col('U_Estado')       ?? 0),
+        U_NroDocERP:   col('U_NroDocERP') ? String(col('U_NroDocERP')) : null,
+      };
+    });
+  }
+
   async findPendientes(): Promise<any[]> {
     const rows = await this.db.query<any>(
       `SELECT m."U_IdRendicion", m."U_IdUsuario", m."U_NomUsuario",

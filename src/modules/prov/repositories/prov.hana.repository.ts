@@ -1,5 +1,4 @@
-import { Injectable } from '@nestjs/common';
-import { Inject } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
 import { IProvRepository } from './prov.repository.interface';
@@ -20,41 +19,80 @@ export class ProvHanaRepository implements IProvRepository {
     private readonly config: ConfigService,
   ) {}
 
-  // ── Consultas ─────────────────────────────────────────────────
+  // ── Detección de columnas disponibles ──────────────────────────────────
+  // La tabla REND_PROV puede tener 2 columnas (U_NIT, U_RAZON_SOCIAL)
+  // o 4 columnas (+ U_CODIGO, U_TIPO) dependiendo del schema/ambiente.
+  // Detectamos en runtime cuáles existen para compatibilidad entre ambientes.
 
-  findAll(tipo?: string): Promise<Prov[]> {
-    if (tipo) {
-      return this.db.query<Prov>(
-        `SELECT "U_CODIGO", "U_NIT", "U_RAZON_SOCIAL", "U_TIPO"
-         FROM ${this.DB} WHERE "U_TIPO" = ? ORDER BY "U_RAZON_SOCIAL"`,
+  private _hasCodigo: boolean | null = null;
+
+  private async hasCodigo(): Promise<boolean> {
+    if (this._hasCodigo !== null) return this._hasCodigo;
+    try {
+      await this.db.query(`SELECT "U_CODIGO" FROM ${this.DB} WHERE 1=0`);
+      this._hasCodigo = true;
+    } catch {
+      this._hasCodigo = false;
+    }
+    return this._hasCodigo;
+  }
+
+  private normalize(row: any, withCodigo: boolean): Prov {
+    return {
+      U_CODIGO:       withCodigo ? String(this.db.col(row, 'U_CODIGO') ?? '') : '',
+      U_NIT:          String(this.db.col(row, 'U_NIT')          ?? ''),
+      U_RAZON_SOCIAL: String(this.db.col(row, 'U_RAZON_SOCIAL') ?? ''),
+      U_TIPO:         withCodigo ? String(this.db.col(row, 'U_TIPO') ?? '') : '',
+    };
+  }
+
+  // ── Consultas ──────────────────────────────────────────────────────────
+
+  async findAll(tipo?: string): Promise<Prov[]> {
+    const wc = await this.hasCodigo();
+    const cols = wc
+      ? `"U_CODIGO", "U_NIT", "U_RAZON_SOCIAL", "U_TIPO"`
+      : `"U_NIT", "U_RAZON_SOCIAL"`;
+
+    let rows: any[];
+    if (wc && tipo) {
+      rows = await this.db.query(
+        `SELECT ${cols} FROM ${this.DB} WHERE "U_TIPO" = ? ORDER BY "U_RAZON_SOCIAL"`,
         [tipo],
       );
+    } else {
+      const order = wc ? `ORDER BY "U_TIPO", "U_RAZON_SOCIAL"` : `ORDER BY "U_RAZON_SOCIAL"`;
+      rows = await this.db.query(`SELECT ${cols} FROM ${this.DB} ${order}`);
     }
-    return this.db.query<Prov>(
-      `SELECT "U_CODIGO", "U_NIT", "U_RAZON_SOCIAL", "U_TIPO"
-       FROM ${this.DB} ORDER BY "U_TIPO", "U_RAZON_SOCIAL"`,
-    );
+    return rows.map(r => this.normalize(r, wc));
   }
 
   async findByCodigo(codigo: string): Promise<Prov | null> {
-    const rows = await this.db.query<Prov>(
-      `SELECT "U_CODIGO", "U_NIT", "U_RAZON_SOCIAL", "U_TIPO"
-       FROM ${this.DB} WHERE "U_CODIGO" = ?`, [codigo],
+    const wc = await this.hasCodigo();
+    if (!wc) return null;   // tabla sin U_CODIGO — búsqueda por código no aplica
+    const rows = await this.db.query(
+      `SELECT "U_CODIGO", "U_NIT", "U_RAZON_SOCIAL", "U_TIPO" FROM ${this.DB} WHERE "U_CODIGO" = ?`,
+      [codigo],
     );
-    return rows[0] ?? null;
+    return rows[0] ? this.normalize(rows[0], true) : null;
   }
 
   async findByNit(nit: string): Promise<Prov | null> {
-    const rows = await this.db.query<Prov>(
-      `SELECT "U_CODIGO", "U_NIT", "U_RAZON_SOCIAL", "U_TIPO"
-       FROM ${this.DB} WHERE "U_NIT" = ?`, [nit],
+    const wc = await this.hasCodigo();
+    const cols = wc
+      ? `"U_CODIGO", "U_NIT", "U_RAZON_SOCIAL", "U_TIPO"`
+      : `"U_NIT", "U_RAZON_SOCIAL"`;
+    const rows = await this.db.query(
+      `SELECT ${cols} FROM ${this.DB} WHERE "U_NIT" = ?`,
+      [nit],
     );
-    return rows[0] ?? null;
+    return rows[0] ? this.normalize(rows[0], wc) : null;
   }
 
-  // ── Generación de código ──────────────────────────────────────
-
   async getNextCodigo(tipo: string): Promise<string> {
+    const wc = await this.hasCodigo();
+    if (!wc) return '';   // tabla sin U_CODIGO — no genera código secuencial
+
     const prefix = tipo.toUpperCase();
 
     if (this.dbType === 'POSTGRES') {
@@ -65,10 +103,8 @@ export class ProvHanaRepository implements IProvRepository {
       return this.db.col(row, 'NEXT_CODIGO');
     }
 
-    // HANA / SQL Server
     const rows = await this.db.query<any>(
-      `SELECT "U_CODIGO" FROM ${this.DB}
-       WHERE "U_CODIGO" LIKE ? ORDER BY "U_CODIGO" DESC`,
+      `SELECT "U_CODIGO" FROM ${this.DB} WHERE "U_CODIGO" LIKE ? ORDER BY "U_CODIGO" DESC`,
       [`${prefix}%`],
     );
     let maxNum = 0;
@@ -79,28 +115,40 @@ export class ProvHanaRepository implements IProvRepository {
     return `${prefix}${String(maxNum + 1).padStart(5, '0')}`;
   }
 
-  // ── Mutaciones ────────────────────────────────────────────────
+  // ── Mutaciones ─────────────────────────────────────────────────────────
 
   async create(dto: CreateProvDto): Promise<Prov> {
-    const codigo = await this.getNextCodigo(dto.tipo);
-    await this.db.execute(
-      `INSERT INTO ${this.DB} ("U_CODIGO", "U_NIT", "U_RAZON_SOCIAL", "U_TIPO")
-       VALUES (?, ?, ?, ?)`,
-      [codigo, dto.nit, dto.razonSocial, dto.tipo],
-    );
-    return { U_CODIGO: codigo, U_NIT: dto.nit, U_RAZON_SOCIAL: dto.razonSocial, U_TIPO: dto.tipo };
+    const wc = await this.hasCodigo();
+
+    if (wc) {
+      // Schema completo: 4 columnas
+      const codigo = await this.getNextCodigo(dto.tipo);
+      await this.db.execute(
+        `INSERT INTO ${this.DB} ("U_CODIGO", "U_NIT", "U_RAZON_SOCIAL", "U_TIPO") VALUES (?, ?, ?, ?)`,
+        [codigo, dto.nit, dto.razonSocial, dto.tipo],
+      );
+      return { U_CODIGO: codigo, U_NIT: dto.nit, U_RAZON_SOCIAL: dto.razonSocial, U_TIPO: dto.tipo };
+    } else {
+      // Schema reducido QA2: solo U_NIT y U_RAZON_SOCIAL
+      await this.db.execute(
+        `INSERT INTO ${this.DB} ("U_NIT", "U_RAZON_SOCIAL") VALUES (?, ?)`,
+        [dto.nit, dto.razonSocial],
+      );
+      return { U_CODIGO: '', U_NIT: dto.nit, U_RAZON_SOCIAL: dto.razonSocial, U_TIPO: dto.tipo };
+    }
   }
 
   async updateByCodigo(
     codigo: string,
     data: { nit?: string; razonSocial?: string },
   ): Promise<{ affected: number }> {
+    const wc = await this.hasCodigo();
+    if (!wc) return { affected: 0 };
+
     const parts:  string[] = [];
     const params: any[]    = [];
-
     if (data.razonSocial !== undefined) { parts.push('"U_RAZON_SOCIAL" = ?'); params.push(data.razonSocial); }
     if (data.nit         !== undefined) { parts.push('"U_NIT" = ?');          params.push(data.nit); }
-
     if (!parts.length) return { affected: 0 };
 
     params.push(codigo);
@@ -111,9 +159,11 @@ export class ProvHanaRepository implements IProvRepository {
     return { affected };
   }
 
-  async remove(codigo: string): Promise<{ affected: number }> {
+  async remove(nit: string): Promise<{ affected: number }> {
+    // Eliminar por NIT — funciona con ambas estructuras de tabla
     const result = await this.db.execute(
-      `DELETE FROM ${this.DB} WHERE "U_CODIGO" = ?`, [codigo],
+      `DELETE FROM ${this.DB} WHERE "U_NIT" = ?`,
+      [nit],
     );
     return { affected: result ?? 1 };
   }

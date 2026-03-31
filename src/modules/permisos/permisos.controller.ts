@@ -6,6 +6,7 @@ import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagg
 import { PermisosService } from './permisos.service';
 import { CreatePermisoDto } from './dto/create-permiso.dto';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { RequiereConf } from '../../auth/decorators/require-conf.decorator';
 
 @ApiTags('Permisos')
 @ApiBearerAuth()
@@ -39,6 +40,7 @@ export class PermisosController {
     return this.service.findByUsuario(idUsuario);
   }
 
+  @RequiereConf()
   @Post()
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Asignar perfil a usuario' })
@@ -48,6 +50,7 @@ export class PermisosController {
     return this.service.create(dto);
   }
 
+  @RequiereConf()
   @Delete(':idUsuario/:idPerfil')
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Eliminar permiso de usuario' })

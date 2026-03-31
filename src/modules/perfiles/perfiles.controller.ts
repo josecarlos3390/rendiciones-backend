@@ -7,6 +7,7 @@ import { PerfilesService } from './perfiles.service';
 import { CreatePerfilDto } from './dto/create-perfil.dto';
 import { UpdatePerfilDto } from './dto/update-perfil.dto';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { RequiereConf } from '../../auth/decorators/require-conf.decorator';
 
 @ApiTags('Perfiles')
 @ApiBearerAuth()
@@ -31,6 +32,7 @@ export class PerfilesController {
     return this.perfilesService.findOne(id);
   }
 
+  @RequiereConf()
   @Post()
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Crear perfil (solo ADMIN)' })
@@ -39,6 +41,7 @@ export class PerfilesController {
     return this.perfilesService.create(dto);
   }
 
+  @RequiereConf()
   @Patch(':id')
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Actualizar perfil (solo ADMIN)' })
@@ -50,6 +53,7 @@ export class PerfilesController {
     return this.perfilesService.update(id, dto);
   }
 
+  @RequiereConf()
   @Delete(':id')
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Eliminar perfil (solo ADMIN)' })

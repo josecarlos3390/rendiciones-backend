@@ -12,6 +12,7 @@ export interface JwtPayload {
   nr2:        string;   // REND_U.U_NR2 — norma reparto 2 preconfigurada
   nr3:        string;   // REND_U.U_NR3 — norma reparto 3 preconfigurada
   nomSup:     string;   // REND_U.U_NomSup — login del aprobador (vacío = nivel final)
+  esAprobador: boolean;  // true si algún usuario tiene este login como U_NomSup
   iat?:       number;
   exp?:       number;
 }

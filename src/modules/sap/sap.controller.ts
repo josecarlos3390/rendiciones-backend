@@ -14,7 +14,7 @@ export class SapController {
   ) {}
 
   @Get('dimensions')
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USER')
   @ApiOperation({ summary: 'Dimensiones activas con normas de reparto (SAP o Postgres según APP_MODE)' })
   getDimensions() {
     return this.sapService.getActiveDimensionsWithRules();
@@ -30,7 +30,7 @@ export class SapController {
   }
 
   @Get('chart-of-accounts')
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USER')
   @ApiOperation({ summary: 'Plan de cuentas (SAP o Postgres según APP_MODE)' })
   getChartOfAccounts() {
     return this.sapService.getChartOfAccounts();

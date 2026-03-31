@@ -14,8 +14,8 @@ export class DocumentosHanaRepository implements IDocumentosRepository {
 
   private get dbType(): string  { return this.configService.get<string>('app.dbType', 'HANA').toUpperCase(); }
   private get schema(): string  { return this.configService.get<string>('hana.schema'); }
-  private get DB(): string      { return tbl(this.schema, 'REND_CTA', this.dbType); }
-  private get DB_PERF(): string      { return tbl(this.schema, 'REND_PERFIL', this.dbType); }
+  private get DB(): string      { return tbl(this.schema, 'REND_CTA',    this.dbType); }
+  private get DB_PERF(): string { return tbl(this.schema, 'REND_PERFIL', this.dbType); }
 
   constructor(
     @Inject(DATABASE_SERVICE)

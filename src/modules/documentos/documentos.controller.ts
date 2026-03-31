@@ -7,6 +7,7 @@ import { DocumentosService } from './documentos.service';
 import { CreateDocumentoDto } from './dto/create-documento.dto';
 import { UpdateDocumentoDto } from './dto/update-documento.dto';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { RequiereConf } from '../../auth/decorators/require-conf.decorator';
 
 @ApiTags('Documentos')
 @ApiBearerAuth()
@@ -34,6 +35,7 @@ export class DocumentosController {
     return this.service.findOne(id);
   }
 
+  @RequiereConf()
   @Post()
   @Roles('ADMIN')
   @ApiResponse({ status: 201, description: 'Documento creado' })
@@ -41,12 +43,14 @@ export class DocumentosController {
     return this.service.create(dto);
   }
 
+  @RequiereConf()
   @Patch(':id')
   @Roles('ADMIN')
   update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateDocumentoDto) {
     return this.service.update(id, dto);
   }
 
+  @RequiereConf()
   @Delete(':id')
   @Roles('ADMIN')
   remove(@Param('id', ParseIntPipe) id: number) {

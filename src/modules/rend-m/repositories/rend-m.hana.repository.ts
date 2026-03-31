@@ -77,6 +77,124 @@ export class RendMHanaRepository implements IRendMRepository {
     };
   }
 
+  /**
+   * Obtiene todos los logins de la jerarquía de subordinados en cascada.
+   * Recorre el árbol: directo → subordinados de subordinados → etc.
+   */
+  private async getSubordinadosEnCascada(loginAprobador: string): Promise<string[]> {
+    const DB_U    = tbl(this.schema, 'REND_U', this.dbType);
+    const todos   = new Set<string>();
+    const cola    = [loginAprobador.toLowerCase()];
+    const visitados = new Set<string>();
+
+    while (cola.length > 0) {
+      const login = cola.shift()!;
+      if (visitados.has(login)) continue;
+      visitados.add(login);
+
+      const rows = await this.db.query<any>(
+        `SELECT CAST("U_IdU" AS VARCHAR) AS "idU", LOWER("U_Login") AS "login"
+         FROM ${DB_U}
+         WHERE LOWER("U_NomSup") = ?`,
+        [login],
+      );
+      for (const r of rows) {
+        const idU      = String(this.db.col(r, 'idU'));
+        const subLogin = String(this.db.col(r, 'login') ?? '');
+        if (idU) todos.add(idU);
+        if (subLogin && !visitados.has(subLogin)) cola.push(subLogin);
+      }
+    }
+    return Array.from(todos);
+  }
+
+  /**
+   * Rendiciones de usuarios subordinados (directos o en cascada).
+   * - Aprobador: solo subordinados directos (un nivel)
+   * - Usuario sync (sinAprobador): toda la jerarquía en cascada
+   */
+  async findBySubordinados(
+    loginAprobador:   string,
+    idPerfil:         number | undefined,
+    estados:          number[],
+    page:             number,
+    limit:            number,
+    idUsuarioFiltro?: string,
+    cascada:          boolean = false,
+  ): Promise<PaginatedResult<RendM>> {
+    const DB_U   = tbl(this.schema, 'REND_U', this.dbType);
+    const offset = (page - 1) * limit;
+
+    let subordinadoIds: string[] = [];
+
+    if (cascada) {
+      // Usuario sync: obtener TODA la jerarquía en cascada
+      subordinadoIds = await this.getSubordinadosEnCascada(loginAprobador);
+    }
+
+    // Construir WHERE dinámico
+    const conditions: string[] = [];
+    const params: any[] = [];
+
+    if (cascada && subordinadoIds.length > 0) {
+      // Filtrar por IDs de subordinados en cascada
+      conditions.push(`m."U_IdUsuario" IN (${subordinadoIds.map(() => '?').join(',')})`);
+      params.push(...subordinadoIds);
+    } else if (cascada && subordinadoIds.length === 0) {
+      // Sin subordinados — devolver vacío
+      return { data: [], total: 0, page, limit, totalPages: 0 };
+    } else {
+      // Aprobador: solo subordinados directos (un nivel)
+      conditions.push(
+        `EXISTS (SELECT 1 FROM ${DB_U} u WHERE LOWER(u."U_NomSup") = LOWER(?) AND CAST(u."U_IdU" AS VARCHAR) = m."U_IdUsuario")`
+      );
+      params.push(loginAprobador);
+    }
+
+    if (estados.length > 0) {
+      conditions.push(`m."U_Estado" IN (${estados.map(() => '?').join(',')})`);
+      params.push(...estados);
+    }
+    if (idPerfil !== undefined) {
+      conditions.push(`m."U_IdPerfil" = ?`);
+      params.push(idPerfil);
+    }
+    if (idUsuarioFiltro) {
+      conditions.push(`m."U_IdUsuario" = ?`);
+      params.push(idUsuarioFiltro);
+    }
+
+    const where = `WHERE ${conditions.join(' AND ')}`;
+
+    const countRow = await this.db.queryOne<Record<string, number>>(
+      `SELECT COUNT(*) AS "total" FROM ${this.DB} m ${where}`,
+      params,
+    );
+    const total = this.db.col(countRow, 'total') ?? 0;
+
+    const data = await this.db.query<RendM>(
+      `SELECT ${SAFE_COLS} FROM ${this.DB} m
+       ${where}
+       ORDER BY m."U_FechaCreacion" DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset],
+    );
+
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  /** Verifica si el usuario idUsuario tiene como aprobador a loginAprobador */
+  async isSubordinado(idUsuario: string, loginAprobador: string): Promise<boolean> {
+    const DB_U = tbl(this.schema, 'REND_U', this.dbType);
+    const rows = await this.db.query<any>(
+      `SELECT 1 FROM ${DB_U}
+       WHERE CAST("U_IdU" AS VARCHAR) = ?
+         AND LOWER("U_NomSup") = LOWER(?)`,
+      [idUsuario, loginAprobador],
+    );
+    return rows.length > 0;
+  }
+
   async findOne(id: number): Promise<RendM | null> {
     const rows = await this.db.query<RendM>(
       `SELECT ${SAFE_COLS} FROM ${this.DB} WHERE "U_IdRendicion" = ?`,
@@ -175,6 +293,13 @@ export class RendMHanaRepository implements IRendMRepository {
     await this.db.execute(
       `UPDATE ${this.DB} SET "U_Estado" = ? WHERE "U_IdRendicion" = ?`,
       [estado, id],
+    );
+  }
+
+  async updatePreliminar(id: number, preliminar: string): Promise<void> {
+    await this.db.execute(
+      `UPDATE ${this.DB} SET "U_Preliminar" = ? WHERE "U_IdRendicion" = ?`,
+      [preliminar, id],
     );
   }
 

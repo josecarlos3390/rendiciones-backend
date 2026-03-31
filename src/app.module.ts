@@ -15,6 +15,7 @@ import { PermisosModule }         from './modules/permisos/permisos.module';
 import { DocumentosModule }       from './modules/documentos/documentos.module';
 import { RendMModule }            from './modules/rend-m/rend-m.module';
 import { RendDModule }            from './modules/rend-d/rend-d.module';
+import { PrctjModule }            from './modules/prctj/prctj.module';
 import { SapModule }              from './modules/sap/sap.module';
 import { AppConfigModule }        from './modules/app-config/app-config.module';
 import { AprobacionesModule }    from './modules/aprobaciones/aprobaciones.module';
@@ -23,6 +24,7 @@ import { FacturaModule }         from './modules/factura/factura.module';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard }   from './common/guards/roles.guard';
+import { ConfGuard }    from './common/guards/conf.guard';
 
 import hanaConfig      from './config/hana.config';
 import jwtConfig       from './config/jwt.config';
@@ -59,6 +61,7 @@ import { RendCmpModule } from './modules/rend-cmp/rend-cmp.module';
     DocumentosModule,
     RendMModule,
     RendDModule,
+    PrctjModule,
     SapModule,
     AppConfigModule,
     AprobacionesModule,
@@ -72,6 +75,7 @@ import { RendCmpModule } from './modules/rend-cmp/rend-cmp.module';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     // Roles aplicado globalmente — usar @Roles(...) para restringir
     { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: ConfGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })

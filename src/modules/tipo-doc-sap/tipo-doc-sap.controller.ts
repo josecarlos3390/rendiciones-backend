@@ -6,6 +6,7 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 import { IsInt, IsString, IsNotEmpty, IsBoolean, IsIn, IsOptional, MaxLength, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { RequiereConf } from '../../auth/decorators/require-conf.decorator';
 
 class CreateTipoDocSapBodyDto implements CreateTipoDocSapDto {
   @ApiProperty({ description: 'Código SAP del tipo de documento', example: 1 })
@@ -77,11 +78,13 @@ export class TipoDocSapController {
   @Roles('ADMIN', 'USER')
   findOne(@Param('id', ParseIntPipe) id: number) { return this.svc.findOne(id); }
 
+  @RequiereConf()
   @Post()
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Crea un nuevo tipo de documento SAP' })
   create(@Body() dto: CreateTipoDocSapBodyDto) { return this.svc.create(dto); }
 
+  @RequiereConf()
   @Patch(':id')
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Actualiza un tipo de documento SAP' })
@@ -90,6 +93,7 @@ export class TipoDocSapController {
     @Body() dto: UpdateTipoDocSapBodyDto,
   ) { return this.svc.update(id, dto); }
 
+  @RequiereConf()
   @Delete(':id')
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Elimina un tipo de documento SAP' })

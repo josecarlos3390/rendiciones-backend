@@ -61,8 +61,8 @@ export class AuthService {
     const login      = col('U_Login');
     const nomUser    = col('U_NomUser')    ?? '';
     const superUser  = col('U_SuperUser')  ?? 0;
-    const appRend    = col('U_AppRend')    ?? 'N';
-    const appConf    = col('U_AppConf')    ?? 'N';
+    const appRend    = String(col('U_AppRend')    ?? '0').trim() === '1' ? 'Y' : 'N';
+    const appConf    = String(col('U_AppConf')    ?? '0').trim() === '1' ? 'Y' : 'N';
     const fijarSaldo = col('U_FIJARSALDO') ?? '0';
     const genDocPre  = col('U_GenDocPre')  ?? '0';
     const fijarNr    = col('U_FIJARNR')    ?? '0';
@@ -70,6 +70,13 @@ export class AuthService {
     const nr2        = col('U_NR2')        ?? '';
     const nr3        = col('U_NR3')        ?? '';
     const nomSup     = col('U_NomSup')     ?? '';
+
+    // ¿Es aprobador de algún usuario? → buscar si alguien lo tiene como U_NomSup
+    const aprobRows  = await this.db.query<any>(
+      `SELECT COUNT(*) AS "cnt" FROM ${this.DB} WHERE LOWER("U_NomSup") = ?`,
+      [String(login).toLowerCase()],
+    );
+    const esAprobador = Number(this.db.col(aprobRows[0], 'cnt') ?? 0) > 0;
 
     const isValid = await bcrypt.compare(password, pass ?? '');
     this.logger.debug(`bcrypt.compare: ${isValid}`);
@@ -91,7 +98,7 @@ export class AuthService {
     const payload: JwtPayload = {
       sub: idU, username: login, name: nomUser,
       role: this.toRole(superUser), appRend, appConf, fijarSaldo, genDocPre,
-      fijarNr, nr1, nr2, nr3, nomSup,
+      fijarNr, nr1, nr2, nr3, nomSup, esAprobador,
     };
 
     return {
@@ -121,8 +128,8 @@ export class AuthService {
     const login      = col('U_Login');
     const nomUser    = col('U_NomUser')    ?? '';
     const superUser  = col('U_SuperUser')  ?? 0;
-    const appRend    = col('U_AppRend')    ?? 'N';
-    const appConf    = col('U_AppConf')    ?? 'N';
+    const appRend    = String(col('U_AppRend')    ?? '0').trim() === '1' ? 'Y' : 'N';
+    const appConf    = String(col('U_AppConf')    ?? '0').trim() === '1' ? 'Y' : 'N';
     const fijarSaldo = col('U_FIJARSALDO') ?? '0';
     const genDocPre  = col('U_GenDocPre')  ?? '0';
     const fijarNr    = col('U_FIJARNR')    ?? '0';
@@ -131,13 +138,20 @@ export class AuthService {
     const nr3        = col('U_NR3')        ?? '';
     const nomSup     = col('U_NomSup')     ?? '';
 
+    // ¿Es aprobador de algún usuario?
+    const aprobRows2 = await this.db.query<any>(
+      `SELECT COUNT(*) AS "cnt" FROM ${this.DB} WHERE LOWER("U_NomSup") = ?`,
+      [String(login).toLowerCase()],
+    );
+    const esAprobador = Number(this.db.col(aprobRows2[0], 'cnt') ?? 0) > 0;
+
     if (estado !== '1') throw new UnauthorizedException('Tu cuenta esta inactiva. Contacta al administrador.');
     if (new Date(expDate) < new Date()) throw new UnauthorizedException('Tu cuenta ha expirado. Contacta al administrador.');
 
     const payload: JwtPayload = {
       sub: idU, username: login, name: nomUser,
       role: this.toRole(superUser), appRend, appConf, fijarSaldo, genDocPre,
-      fijarNr, nr1, nr2, nr3, nomSup,
+      fijarNr, nr1, nr2, nr3, nomSup, esAprobador,
     };
 
     return { access_token: this.jwtService.sign(payload) };

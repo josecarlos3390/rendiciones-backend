@@ -16,5 +16,6 @@ import { RendMModule }         from '../rend-m/rend-m.module';
       useFactory: (hanaRepo: RendDHanaRepository) => hanaRepo,
     },
   ],
+  exports: [RendDService],
 })
 export class RendDModule {}

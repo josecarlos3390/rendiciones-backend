@@ -5,6 +5,7 @@ import { CreateRendCmpDto }   from './dto/create-rend-cmp.dto';
 import { UpdateRendCmpDto }   from './dto/update-rend-cmp.dto';
 import { Roles }              from '../../auth/decorators/roles.decorator';
 import { Throttle }           from '@nestjs/throttler';
+import { RequiereConf } from '../../auth/decorators/require-conf.decorator';
 
 @ApiTags('Rend-CMP')
 @ApiBearerAuth()
@@ -26,6 +27,7 @@ export class RendCmpController {
     return this.svc.findOne(id);
   }
 
+  @RequiereConf()
   @Post()
   @Roles('ADMIN')
   @Throttle({ default: { ttl: 60_000, limit: 20 } })
@@ -34,6 +36,7 @@ export class RendCmpController {
     return this.svc.create(dto);
   }
 
+  @RequiereConf()
   @Patch(':id')
   @Roles('ADMIN')
   @Throttle({ default: { ttl: 60_000, limit: 20 } })
@@ -42,6 +45,7 @@ export class RendCmpController {
     return this.svc.update(id, dto);
   }
 
+  @RequiereConf()
   @Delete(':id')
   @Roles('ADMIN')
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
