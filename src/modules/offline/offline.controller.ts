@@ -12,7 +12,7 @@ import {
   Inject,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsIn, IsNumber, MaxLength, IsInt } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsIn, MaxLength, IsInt } from 'class-validator';
 import { Type } from 'class-transformer';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { IDatabaseService, DATABASE_SERVICE } from '../../database/interfaces/database.interface';

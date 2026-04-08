@@ -17,7 +17,7 @@ export interface RendD {
   U_RD_Fecha:         string;
   U_RD_IdTipoDoc:     number;
   U_RD_IdDoc:         number | null;
-  U_RD_TipoDoc:       string;
+  U_RD_TipoDoc:       number;
   U_RD_Partida:       string | null;
   U_RD_Exento:        number | null;
   U_RD_Estado:        number;

@@ -1,12 +1,13 @@
 import {
   Controller, Get, Post, Patch, Delete,
   Body, Param, ParseIntPipe, Query, Req,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { RendMService }     from './rend-m.service';
 import { CreateRendMDto }   from './dto/create-rend-m.dto';
 import { UpdateRendMDto }   from './dto/update-rend-m.dto';
-import { PaginationDto, RendMQueryDto } from '../../common/dto/pagination.dto';
+import { RendMQueryDto } from '../../common/dto/pagination.dto';
 import { Roles }            from '../../auth/decorators/roles.decorator';
 import { PerfilesService }  from '../perfiles/perfiles.service';
 
@@ -33,11 +34,15 @@ export class RendMController {
     @Req() req: any,
     @Query() query: RendMQueryDto,
   ) {
+    const estados = query.estados
+      ? query.estados.split(',').map(Number).filter(n => !isNaN(n))
+      : undefined;
     return this.rendMService.findAll(
       req.user.role,
       String(req.user.sub),
       query.idPerfil,
       query,
+      estados,
     );
   }
 
@@ -72,7 +77,7 @@ export class RendMController {
     // Usuario sin aprobador (nivel sync) → cascada completa
     // Aprobador con aprobador propio    → solo subordinados directos
     const sinAprobador = !req.user.nomSup?.trim();
-    const cascada      = req.user.role === 'ADMIN' || sinAprobador;
+    const cascada      = sinAprobador;
 
     return this.rendMService.findSubordinados(
       req.user.username,
@@ -88,9 +93,13 @@ export class RendMController {
   @Get('stats')
   @Roles('ADMIN', 'USER')
   @ApiOperation({ summary: 'Estadísticas de rendiciones para el dashboard' })
-  getStats(@Req() req: any) {
+  getStats(
+    @Req() req: any,
+    @Query('idPerfil') idPerfilStr?: string,
+  ) {
     const isAdmin = req.user.role === 'ADMIN';
-    return this.rendMService.getStats(String(req.user.sub), isAdmin);
+    const idPerfil = idPerfilStr ? Number(idPerfilStr) : undefined;
+    return this.rendMService.getStats(String(req.user.sub), isAdmin, idPerfil);
   }
 
   @Get(':id')
@@ -98,8 +107,28 @@ export class RendMController {
   @ApiOperation({ summary: 'Obtener cabecera de rendición por ID' })
   @ApiResponse({ status: 200, description: 'Cabecera encontrada' })
   @ApiResponse({ status: 404, description: 'No encontrada' })
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.rendMService.findOne(id);
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: any,
+  ) {
+    const row = await this.rendMService.findOne(id);
+    if (req.user.role === 'ADMIN') return row;
+    if (row.U_IdUsuario === String(req.user.sub)) return row;
+
+    const esAprobador  = req.user.esAprobador === true;
+    const sinAprobador = !req.user.nomSup?.trim();
+
+    if (esAprobador) {
+      const esSub = await this.rendMService.isSubordinado(row.U_IdUsuario, req.user.username);
+      if (esSub) return row;
+    }
+
+    if (sinAprobador) {
+      const esSub = await this.rendMService.isSubordinado(row.U_IdUsuario, req.user.username);
+      if (esSub) return row;
+    }
+
+    throw new ForbiddenException('No tenés acceso a esta rendición');
   }
 
   @Post()

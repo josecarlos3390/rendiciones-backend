@@ -29,17 +29,33 @@ export class IntegracionService {
     private readonly config:   ConfigService,
   ) {}
 
-  async getPendientes() {
-    return this.repo.findPendientes();
+  async getPendientes(
+    loginAprob: string,
+    isAdmin: boolean,
+    sinAprobador: boolean,
+  ) {
+    if (isAdmin || sinAprobador) {
+      const cascada = sinAprobador; // true = toda la jerarquía en cascada
+      return this.repo.findPendientesByAprobador(loginAprob, cascada);
+    }
+    return [];
   }
 
   async getMisRendiciones(idUsuario: string) {
     return this.repo.findMisRendiciones(idUsuario);
   }
 
-  async countPendientes(): Promise<{ count: number }> {
-    const count = await this.repo.countPendientes();
-    return { count };
+  async countPendientes(
+    loginAprob: string,
+    isAdmin: boolean,
+    sinAprobador: boolean,
+  ): Promise<{ count: number }> {
+    if (isAdmin || sinAprobador) {
+      const cascada = sinAprobador;
+      const count = await this.repo.countPendientesByAprobador(loginAprob, cascada);
+      return { count };
+    }
+    return { count: 0 };
   }
 
   async getHistorial(idRendicion: number) {
@@ -156,6 +172,11 @@ export class IntegracionService {
       };
     }
 
+    // Validar credenciales SAP
+    if (!dto.sapUser?.trim() || !dto.sapPassword?.trim()) {
+      throw new BadRequestException('Credenciales SAP requeridas (sapUser y sapPassword)');
+    }
+
     let session: Awaited<ReturnType<SapSlService['login']>> | null = null;
 
     try {
@@ -170,8 +191,21 @@ export class IntegracionService {
         }
       }
 
-      // ── 9. Construir payload del JournalVoucher ───────────────────────
-      const payload = this.sapSl.buildJournalPayload(rend, detalles, distribucionesMap);
+      // ── 9. Obtener tipo de cambio si BolivianosEs=SISTEMA ─────────────
+      let tasaCambio: number | undefined;
+      const bolivianosEs = this.config.get<string>('app.bolivianosEs', 'LOCAL').toUpperCase();
+      
+      if (bolivianosEs === 'SISTEMA') {
+        const fechaCabecera = rend.U_FechaFinal?.substring(0, 10)
+                           ?? new Date().toISOString().substring(0, 10);
+        
+        this.logger.log(`Obteniendo tipo de cambio USD para fecha ${fechaCabecera}`);
+        tasaCambio = await this.sapSl.obtenerTasaCambio(session, 'USD', fechaCabecera);
+        this.logger.log(`Tasa de cambio aplicada: ${tasaCambio}`);
+      }
+
+      // ── 10. Construir payload del JournalVoucher ───────────────────────
+      const payload = this.sapSl.buildJournalPayload(rend, detalles, distribucionesMap, tasaCambio);
 
       // ── 10. Enviar a SAP Service Layer ────────────────────────────────
       const nroDocERP = await this.sapSl.crearAsientoPreliminar(session, payload);

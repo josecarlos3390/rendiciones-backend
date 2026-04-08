@@ -86,7 +86,7 @@ export class ProvHanaRepository implements IProvRepository {
       `SELECT ${cols} FROM ${this.DB} WHERE "U_NIT" = ?`,
       [nit],
     );
-    return rows[0] ? this.normalize(rows[0], wc) : null;
+    return rows[0] ? this.normalize(rows?.[0], wc) : null;
   }
 
   async getNextCodigo(tipo: string): Promise<string> {

@@ -15,17 +15,21 @@ export class ProvService {
     return this.repo.findByNit(nit) ?? null;
   }
 
+  async findByCodigo(codigo: string) {
+    return this.repo.findByCodigo(codigo) ?? null;
+  }
+
   /** Busca por NIT — si no existe lo crea y lo devuelve */
   async findOrCreate(dto: CreateProvDto) {
     const existing = await this.repo.findByNit(dto.nit);
     if (existing) return existing;
-    return this.repo.create(dto);
+    return this.repo.create({ ...dto, tipo: dto.tipo ?? 'PL' });
   }
 
   async create(dto: CreateProvDto) {
     const exists = await this.repo.findByNit(dto.nit);
     if (exists) throw new ConflictException(`El NIT "${dto.nit}" ya está registrado`);
-    return this.repo.create(dto);
+    return this.repo.create({ ...dto, tipo: dto.tipo ?? 'PL' });
   }
 
   async remove(nit: string) {

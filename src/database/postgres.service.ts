@@ -171,23 +171,21 @@ export class PostgresService implements IDatabaseService, OnModuleInit, OnModule
    * Proxy que usa un PoolClient con transacción activa.
    */
   private buildTransactionProxy(client: PoolClient): IDatabaseService {
-    const self = this;
-
     return {
       query: async <T>(rawSql: string, params: any[] = []): Promise<T[]> => {
-        const { sql, values } = self.convertPlaceholders(rawSql, params);
+        const { sql, values } = this.convertPlaceholders(rawSql, params);
         const result = await client.query<T>(sql, values);
         return result.rows;
       },
 
       queryOne: async <T>(rawSql: string, params: any[] = []): Promise<T | null> => {
-        const { sql, values } = self.convertPlaceholders(rawSql, params);
+        const { sql, values } = this.convertPlaceholders(rawSql, params);
         const result = await client.query<T>(sql, values);
         return result.rows[0] ?? null;
       },
 
       execute: async (rawSql: string, params: any[] = []): Promise<number> => {
-        const { sql, values } = self.convertPlaceholders(rawSql, params);
+        const { sql, values } = this.convertPlaceholders(rawSql, params);
         const result = await client.query(sql, values);
         return result.rowCount ?? 0;
       },
@@ -197,7 +195,7 @@ export class PostgresService implements IDatabaseService, OnModuleInit, OnModule
 
       isConnected: () => true,
 
-      col: (row, name) => self.col(row, name),
+      col: (row, name) => this.col(row, name),
     };
   }
 }

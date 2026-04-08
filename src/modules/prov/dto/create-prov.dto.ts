@@ -2,13 +2,13 @@ import { IsString, IsNotEmpty, IsOptional, MaxLength, IsIn } from 'class-validat
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateProvDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     description: 'Tipo de entidad',
     enum: ['PL', 'PE', 'CL', 'EL'],
     example: 'PL',
   })
-  @IsString() @IsNotEmpty() @IsIn(['PL', 'PE', 'CL', 'EL'])
-  tipo: 'PL' | 'PE' | 'CL' | 'EL';
+  @IsString() @IsOptional() @IsIn(['PL', 'PE', 'CL', 'EL'])
+  tipo?: 'PL' | 'PE' | 'CL' | 'EL';
 
   @ApiProperty({
     description: 'NIT fiscal del proveedor/cliente/empleado',

@@ -16,20 +16,20 @@ export class RendicionesSqlRepository implements IRendicionesRepository {
     throw new Error('SQL Repository no implementado aun. Configura DB_TYPE=HANA');
   }
 
-  async findOne(id: number): Promise<any | null> {
+  async findOne(_id: number): Promise<any | null> {
     // return this.sqlService.query('SELECT * FROM dbo.Rendiciones WHERE Id = @id', [id]);
     throw new Error('SQL Repository no implementado aun.');
   }
 
-  async create(data: CreateRendicionData, userId: number): Promise<any> {
+  async create(_data: CreateRendicionData, _userId: number): Promise<any> {
     throw new Error('SQL Repository no implementado aun.');
   }
 
-  async update(id: number, data: Partial<CreateRendicionData>): Promise<{ affected: number }> {
+  async update(_id: number, _data: Partial<CreateRendicionData>): Promise<{ affected: number }> {
     throw new Error('SQL Repository no implementado aun.');
   }
 
-  async remove(id: number): Promise<{ affected: number }> {
+  async remove(_id: number): Promise<{ affected: number }> {
     throw new Error('SQL Repository no implementado aun.');
   }
 }

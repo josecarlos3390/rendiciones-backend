@@ -1,6 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Inject } from '@nestjs/common';
 import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
 import { IDocumentosRepository } from './documentos.repository.interface';
 import { Documento } from '../interfaces/documento.interface';
@@ -127,8 +126,6 @@ export class DocumentosHanaRepository implements IDocumentosRepository {
   }
 
   async update(id: number, dto: UpdateDocumentoDto): Promise<Documento> {
-    const current = await this.findOne(id);
-
     const sets: string[] = [];
     const params: any[]  = [];
 

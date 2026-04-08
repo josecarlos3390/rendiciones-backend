@@ -1,5 +1,4 @@
-import { Injectable } from '@nestjs/common';
-import { Inject } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
 import { tbl } from '../../../database/db-table.helper';

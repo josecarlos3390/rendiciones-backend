@@ -157,7 +157,7 @@ export class SqlServerService implements IDatabaseService, OnModuleInit, OnModul
     return { query, request };
   }
 
-  private buildRequest(params: any[]): sql.Request {
+  private buildRequest(_params: any[]): sql.Request {
     if (!this.pool) {
       throw new Error('Sin conexión a SQL Server. Verifica SQL_HOST, SQL_USER y SQL_PASSWORD en .env');
     }
@@ -168,29 +168,26 @@ export class SqlServerService implements IDatabaseService, OnModuleInit, OnModul
    * Proxy que usa una transacción activa para todas las operaciones.
    */
   private buildTransactionProxy(transaction: sql.Transaction): IDatabaseService {
-    const logger = this.logger;
-    const self   = this;
-
     const makeRequest = () => new sql.Request(transaction);
 
     return {
       query: async <T>(rawSql: string, params: any[] = []): Promise<T[]> => {
         const req = makeRequest();
-        const { query, request } = self.prepareQuery(rawSql, params, req);
+        const { query, request } = this.prepareQuery(rawSql, params, req);
         const result = await request.query<T>(query);
         return result.recordset;
       },
 
       queryOne: async <T>(rawSql: string, params: any[] = []): Promise<T | null> => {
         const req = makeRequest();
-        const { query, request } = self.prepareQuery(rawSql, params, req);
+        const { query, request } = this.prepareQuery(rawSql, params, req);
         const result = await request.query<T>(query);
         return result.recordset[0] ?? null;
       },
 
       execute: async (rawSql: string, params: any[] = []): Promise<number> => {
         const req = makeRequest();
-        const { query, request } = self.prepareQuery(rawSql, params, req);
+        const { query, request } = this.prepareQuery(rawSql, params, req);
         const result = await request.query(query);
         return result.rowsAffected[0] ?? 0;
       },
@@ -199,7 +196,7 @@ export class SqlServerService implements IDatabaseService, OnModuleInit, OnModul
 
       isConnected: () => true,
 
-      col: (row, name) => self.col(row, name),
+      col: (row, name) => this.col(row, name),
     };
   }
 }

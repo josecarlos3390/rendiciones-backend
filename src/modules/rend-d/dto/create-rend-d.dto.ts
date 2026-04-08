@@ -31,9 +31,13 @@ export class CreateRendDDto {
   @IsInt() @Type(() => Number)
   idTipoDoc: number;
 
-  @ApiProperty({ description: 'Nombre del tipo de documento', example: 'FACTURA', maxLength: 50 })
-  @IsString() @IsNotEmpty() @MaxLength(50)
-  tipoDoc: string;
+  @ApiProperty({ description: 'ID del documento (REND_CTA)', example: 1 })
+  @IsInt() @Type(() => Number)
+  tipoDoc: number;
+
+  @ApiPropertyOptional({ description: 'Nombre del tipo de documento', example: 'FACTURA', maxLength: 50 })
+  @IsString() @IsOptional() @MaxLength(50)
+  tipoDocName?: string;
 
   @ApiPropertyOptional({ description: 'ID del documento (referencia externa)', example: null })
   @IsInt() @IsOptional() @Type(() => Number)

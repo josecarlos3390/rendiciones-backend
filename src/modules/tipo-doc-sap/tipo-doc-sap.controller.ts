@@ -1,11 +1,11 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, ParseIntPipe } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TipoDocSapService } from './tipo-doc-sap.service';
 import { CreateTipoDocSapDto, UpdateTipoDocSapDto } from './repositories/tipo-doc-sap.hana.repository';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { IsInt, IsString, IsNotEmpty, IsBoolean, IsIn, IsOptional, MaxLength, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
 import { RequiereConf } from '../../auth/decorators/require-conf.decorator';
 
 class CreateTipoDocSapBodyDto implements CreateTipoDocSapDto {

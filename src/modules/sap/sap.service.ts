@@ -1,6 +1,5 @@
-import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, Logger, InternalServerErrorException, Inject, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Inject, Optional } from '@nestjs/common';
 import { IDatabaseService, DATABASE_SERVICE } from '../../database/interfaces/database.interface';
 import * as https from 'https';
 
@@ -69,11 +68,13 @@ interface SLAccount {
 interface SLBusinessPartner {
   CardCode: string;
   CardName: string;
+  FederalTaxID?: string;
 }
 
 export interface EmpleadoDto {
   cardCode: string;
   cardName: string;
+  licTradNum?: string;
 }
 
 interface SLSession {
@@ -94,6 +95,7 @@ export class SapService {
   private readonly CACHE_TTL_MS   = 10 * 60 * 1000;
 
   private session:    SLSession | null = null;
+  private sessionLock: Promise<string> | null = null;
   private dimCache:   CacheEntry<DimensionWithRulesDto[]> | null = null;
   private rulesCache: CacheEntry<SLDistributionRule[]>    | null = null;
   private coaCache:   CacheEntry<ChartOfAccountDto[]>      | null = null;
@@ -246,6 +248,7 @@ export class SapService {
       return (data.value ?? []).map(bp => ({
         cardCode: bp.CardCode,
         cardName: bp.CardName,
+        licTradNum: bp.FederalTaxID,
       }));
 
     } catch (err: any) {
@@ -255,6 +258,78 @@ export class SapService {
         `SAP BusinessPartners empleados: ${err?.message ?? 'Error desconocido'}`,
       );
     }
+  }
+
+  /**
+   * Trae TODOS los empleados del perfil desde SAP SL paginando de 500 en 500.
+   * Luego los devuelve al frontend para filtrado local.
+   */
+  async getEmpleadosPaginado(
+    car: string,
+    filtro: string,
+  ): Promise<EmpleadoDto[]> {
+    const carUpper = (car ?? 'EMPIEZA').toUpperCase();
+    const pageSize = 500;
+
+    // NOTIENE o sin filtro → lista vacía
+    if (carUpper === 'NOTIENE' || !filtro) return [];
+
+    // Construir filtro base por perfil
+    const cardCodeFilter = carUpper === 'TERMINA'
+      ? `endswith(CardCode, '${filtro}')`
+      : `startswith(CardCode, '${filtro}')`;
+
+    const buildEndpoint = (skip: number) => {
+      return `BusinessPartners?$select=CardCode,CardName&$filter=${encodeURIComponent(cardCodeFilter)}&$orderby=CardName&$top=${pageSize}&$skip=${skip}`;
+    };
+
+    const all: EmpleadoDto[] = [];
+    const seen = new Set<string>();
+    let offset = 0;
+    let pageCount = 0;
+    const maxPages = 20; // límite de seguridad: 20 x 500 = 10.000 registros
+
+    while (pageCount < maxPages) {
+      const endpoint = buildEndpoint(offset);
+      this.logger.debug(`getEmpleadosPaginado query: ${decodeURIComponent(endpoint)}`);
+
+      let data: { value?: SLBusinessPartner[] };
+      try {
+        data = await this.slGet<{ value: SLBusinessPartner[] }>(endpoint);
+      } catch (err: any) {
+        this.logger.warn(`getEmpleadosPaginado falló en página offset=${offset}: ${err?.message}`);
+        this.session = null;
+        // Reintentar una vez con sesión nueva
+        try {
+          data = await this.slGet<{ value: SLBusinessPartner[] }>(endpoint);
+        } catch (err2: any) {
+          this.logger.error(`getEmpleadosPaginado reintentó y falló: ${err2?.message}`);
+          break;
+        }
+      }
+
+      const page = (data.value ?? []) as SLBusinessPartner[];
+      if (page.length === 0) break;
+
+      for (const bp of page) {
+        const key = bp.CardCode;
+        if (!seen.has(key)) {
+          seen.add(key);
+          all.push({
+            cardCode: bp.CardCode,
+            cardName: bp.CardName,
+            licTradNum: bp.FederalTaxID,
+          });
+        }
+      }
+
+      pageCount++;
+      if (page.length < pageSize) break;
+      offset += pageSize;
+    }
+
+    this.logger.log(`getEmpleadosPaginado completado: ${all.length} empleados cargados en ${pageCount} páginas`);
+    return all;
   }
 
   // ── Proveedores (BusinessPartners filtrados por perfil) ──────────────────────
@@ -274,10 +349,10 @@ export class SapService {
   async getProveedores(car: string, filtro: string, busqueda: string): Promise<EmpleadoDto[]> {
     const carUpper = (car ?? 'TODOS').toUpperCase();
 
-    try {
+    const buildFilters = (includeNitInOdata: boolean): string[] => {
       const filters: string[] = [];
 
-      // Filtro por patrón de CardCode según configuración del perfil
+      // 1. Filtro por patrón de CardCode según configuración del perfil
       if (carUpper !== 'TODOS' && filtro) {
         const patrones = filtro.split('/').map(p => p.trim()).filter(Boolean);
         if (patrones.length > 0) {
@@ -290,37 +365,162 @@ export class SapService {
         }
       }
 
-      // Filtro por nombre si el usuario escribió algo
+      // 2. Filtro por búsqueda libre (nombre/código/NIT)
       if (busqueda) {
         const q = busqueda.replace(/'/g, "''");
         const esCodigoNumerico = /^[\w\d]+$/.test(q) && !/[a-zA-Z]/.test(q);
-        if (esCodigoNumerico) {
-          filters.push(`startswith(CardCode, '${q}')`);
+        if (includeNitInOdata) {
+          if (esCodigoNumerico) {
+            filters.push(`(startswith(CardCode, '${q}') or contains(FederalTaxID, '${q}'))`);
+          } else {
+            filters.push(`(contains(CardName, '${q}') or contains(FederalTaxID, '${q}'))`);
+          }
         } else {
-          filters.push(`contains(CardName, '${q}')`);
+          if (esCodigoNumerico) {
+            filters.push(`startswith(CardCode, '${q}')`);
+          } else {
+            filters.push(`contains(CardName, '${q}')`);
+          }
         }
       }
 
-      if (filters.length === 0) return [];
+      return filters;
+    };
 
+    const buildEndpoint = (filters: string[]) => {
       const combined = filters.join(' and ');
-      const endpoint = `BusinessPartners?$select=CardCode,CardName&$filter=${encodeURIComponent(combined)}&$orderby=CardName&$top=200`;
+      return `BusinessPartners?$select=CardCode,CardName,FederalTaxID&${combined ? `$filter=${encodeURIComponent(combined)}&` : ''}$orderby=CardName&$top=500`;
+    };
 
-      this.logger.debug(`getProveedores query: ${decodeURIComponent(endpoint)}`);
-
-      const data = await this.slGet<{ value: SLBusinessPartner[] }>(endpoint);
-      return (data.value ?? []).map(bp => ({
+    const mapResult = (data: { value?: SLBusinessPartner[] }) =>
+      (data.value ?? []).map(bp => ({
         cardCode: bp.CardCode,
         cardName: bp.CardName,
+        licTradNum: bp.FederalTaxID,
       }));
 
+    // Intento 1: query completa con filtro de NIT en OData
+    try {
+      const filters = buildFilters(true);
+      const endpoint = buildEndpoint(filters);
+      this.logger.debug(`getProveedores query: ${decodeURIComponent(endpoint)}`);
+      const data = await this.slGet<{ value: SLBusinessPartner[] }>(endpoint);
+      return mapResult(data);
     } catch (err: any) {
+      this.logger.warn(`getProveedores con filtro NIT falló: ${err?.message}. Fallback sin filtro NIT...`);
       this.session = null;
-      this.logger.error('Error getProveedores SAP SL:', err?.message ?? err);
+    }
+
+    // Intento 2: fallback sin filtro de NIT en OData, filtramos en memoria
+    try {
+      const filters = buildFilters(false);
+      const endpoint = buildEndpoint(filters);
+      this.logger.debug(`getProveedores fallback query: ${decodeURIComponent(endpoint)}`);
+      const data = await this.slGet<{ value: SLBusinessPartner[] }>(endpoint);
+      let result = mapResult(data);
+
+      if (busqueda) {
+        const q = busqueda.toLowerCase().trim();
+        result = result.filter(bp =>
+          bp.cardCode.toLowerCase().includes(q) ||
+          bp.cardName.toLowerCase().includes(q) ||
+          (bp.licTradNum && bp.licTradNum.toLowerCase().includes(q)),
+        );
+      }
+
+      return result;
+    } catch (err2: any) {
+      this.session = null;
+      this.logger.error('Error getProveedores SAP SL:', err2?.message ?? err2);
       throw new InternalServerErrorException(
-        `SAP BusinessPartners proveedores: ${err?.message ?? 'Error desconocido'}`,
+        `SAP BusinessPartners proveedores: ${err2?.message ?? 'Error desconocido'}`,
       );
     }
+  }
+
+  /**
+   * Trae TODOS los proveedores del perfil desde SAP SL paginando de 500 en 500.
+   * Luego los devuelve al frontend para filtrado local.
+   */
+  async getProveedoresPaginado(
+    car: string,
+    filtro: string,
+  ): Promise<EmpleadoDto[]> {
+    const carUpper = (car ?? 'TODOS').toUpperCase();
+    const pageSize = 500;
+
+    // Construir filtro base por perfil
+    const filters: string[] = [];
+    if (carUpper !== 'TODOS' && filtro) {
+      const patrones = filtro.split('/').map(p => p.trim()).filter(Boolean);
+      if (patrones.length > 0) {
+        const conds = patrones.map(p =>
+          carUpper === 'TERMINA'
+            ? `endswith(CardCode, '${p}')`
+            : `startswith(CardCode, '${p}')`,
+        );
+        filters.push(`(${conds.join(' or ')})`);
+      }
+    }
+
+    // Si no hay filtro de perfil ni de búsqueda, SAP SL a veces exige un filtro mínimo.
+    // Usamos un filtro que siempre sea verdadero para el patrón vacío si es necesario,
+    // pero en la práctica TODOS sin filtro puede devolver muchos registros.
+    // Dejamos que el endpoint funcione con o sin filtros.
+    const baseFilter = filters.length ? filters.join(' and ') : '';
+
+    const buildEndpoint = (skip: number) => {
+      const filterPart = baseFilter ? `$filter=${encodeURIComponent(baseFilter)}&` : '';
+      return `BusinessPartners?$select=CardCode,CardName,FederalTaxID&${filterPart}$orderby=CardName&$top=${pageSize}&$skip=${skip}`;
+    };
+
+    const all: EmpleadoDto[] = [];
+    const seen = new Set<string>();
+    let offset = 0;
+    let pageCount = 0;
+    const maxPages = 20; // límite de seguridad: 20 x 500 = 10.000 registros
+
+    while (pageCount < maxPages) {
+      const endpoint = buildEndpoint(offset);
+      this.logger.debug(`getProveedoresPaginado query: ${decodeURIComponent(endpoint)}`);
+
+      let data: { value?: SLBusinessPartner[] };
+      try {
+        data = await this.slGet<{ value: SLBusinessPartner[] }>(endpoint);
+      } catch (err: any) {
+        this.logger.warn(`getProveedoresPaginado falló en página offset=${offset}: ${err?.message}`);
+        this.session = null;
+        // Reintentar una vez con sesión nueva
+        try {
+          data = await this.slGet<{ value: SLBusinessPartner[] }>(endpoint);
+        } catch (err2: any) {
+          this.logger.error(`getProveedoresPaginado reintentó y falló: ${err2?.message}`);
+          break;
+        }
+      }
+
+      const page = (data.value ?? []) as SLBusinessPartner[];
+      if (page.length === 0) break;
+
+      for (const bp of page) {
+        const key = bp.CardCode;
+        if (!seen.has(key)) {
+          seen.add(key);
+          all.push({
+            cardCode: bp.CardCode,
+            cardName: bp.CardName,
+            licTradNum: bp.FederalTaxID,
+          });
+        }
+      }
+
+      pageCount++;
+      if (page.length < pageSize) break;
+      offset += pageSize;
+    }
+
+    this.logger.log(`getProveedoresPaginado completado: ${all.length} proveedores cargados en ${pageCount} páginas`);
+    return all;
   }
 
   // ── Cuentas por perfil ───────────────────────────────────────────────────────
@@ -431,6 +631,108 @@ export class SapService {
   }
 
   /**
+   * Trae TODAS las cuentas del plan contable filtradas por perfil,
+   * paginando desde SAP SL de 500 en 500.
+   * Luego las devuelve al frontend para filtrado local.
+   *
+   * @param config  configuración del perfil (cueCar + cueTexto)
+   * @param listaCuentas  cuentas pre-cargadas (solo para cueCar === 'LISTA')
+   */
+  async getCuentasPaginado(
+    config: PerfilCuentaConfig,
+    listaCuentas: CuentaDto[] = [],
+  ): Promise<CuentaDto[]> {
+    const car = (config.cueCar ?? 'TODOS').toUpperCase();
+
+    // ── LISTA: devolver las cuentas ya proporcionadas ─────────────────────────
+    if (car === 'LISTA') {
+      return listaCuentas;
+    }
+
+    // ── SAP SL: construir filtro base y paginar ──────────────────────────────
+    const pageSize = 500;
+
+    // Filtro base: cuentas activas, no congeladas, nivel >= 5
+    const baseFilters: string[] = [
+      "ActiveAccount eq 'tYES'",
+      "FrozenFor eq 'tNO'",
+      "AccountLevel ge 5",
+    ];
+
+    // Filtro por perfil (cueCar + cueTexto)
+    if (car !== 'TODOS' && config.cueTexto) {
+      const patrones = this.parsearPatrones(config.cueTexto);
+      if (patrones.length > 0) {
+        if (car === 'RANGO' && patrones.length >= 2) {
+          // Pares: [0]=inicio, [1]=fin, [2]=inicio2, [3]=fin2, etc.
+          const pares: string[] = [];
+          for (let i = 0; i < patrones.length - 1; i += 2) {
+            pares.push(`(startswith(Code, '${patrones[i]}') and endswith(Code, '${patrones[i + 1]}'))`);
+          }
+          if (pares.length) baseFilters.push(`(${pares.join(' or ')})`);
+        } else {
+          const conds = patrones.map(p => {
+            if (car === 'TERMINA') return `endswith(Code, '${p}')`;
+            return `startswith(Code, '${p}')`;
+          });
+          baseFilters.push(`(${conds.join(' or ')})`);
+        }
+      }
+    }
+
+    const baseFilter = baseFilters.join(' and ');
+
+    const buildEndpoint = (skip: number) => {
+      const fields = 'Code,Name';
+      return `ChartOfAccounts?$select=${fields}&$filter=${encodeURIComponent(baseFilter)}&$orderby=Code&$top=${pageSize}&$skip=${skip}`;
+    };
+
+    const all: CuentaDto[] = [];
+    const seen = new Set<string>();
+    let offset = 0;
+    let pageCount = 0;
+    const maxPages = 20; // límite de seguridad: 20 x 500 = 10.000 registros
+
+    while (pageCount < maxPages) {
+      const endpoint = buildEndpoint(offset);
+      this.logger.debug(`getCuentasPaginado query: ${decodeURIComponent(endpoint)}`);
+
+      let data: { value?: SLAccount[] };
+      try {
+        data = await this.slGet<{ value: SLAccount[] }>(endpoint);
+      } catch (err: any) {
+        this.logger.warn(`getCuentasPaginado falló en página offset=${offset}: ${err?.message}`);
+        this.session = null;
+        // Reintentar una vez con sesión nueva
+        try {
+          data = await this.slGet<{ value: SLAccount[] }>(endpoint);
+        } catch (err2: any) {
+          this.logger.error(`getCuentasPaginado reintentó y falló: ${err2?.message}`);
+          break;
+        }
+      }
+
+      const page = (data.value ?? []) as SLAccount[];
+      if (page.length === 0) break;
+
+      for (const acc of page) {
+        const key = acc.Code;
+        if (!seen.has(key)) {
+          seen.add(key);
+          all.push({ code: acc.Code, name: acc.Name });
+        }
+      }
+
+      pageCount++;
+      if (page.length < pageSize) break;
+      offset += pageSize;
+    }
+
+    this.logger.log(`getCuentasPaginado completado: ${all.length} cuentas cargadas en ${pageCount} páginas`);
+    return all;
+  }
+
+  /**
    * Parsea el patrón de cuentas del perfil.
    * "/1/2/5/6/8" → ["1","2","5","6","8"]
    */
@@ -441,6 +743,33 @@ export class SapService {
       .filter(Boolean);
   }
 
+  // ── Proyectos ───────────────────────────────────────────────────────────────
+
+  /**
+   * Retorna proyectos activos desde SAP SL.
+   * Filtra por Active = 'tYES' y ordena por nombre.
+   */
+  async getProjects(): Promise<{ code: string; name: string }[]> {
+    try {
+      const endpoint = `Projects?$select=Code,Name&$filter=Active eq 'tYES'&$orderby=Name`;
+      this.logger.debug(`getProjects query: ${endpoint}`);
+
+      const data = await this.slGet<{ value: Array<{ Code: string; Name: string }> }>(endpoint);
+      
+      return (data.value ?? []).map(p => ({
+        code: p.Code,
+        name: p.Name,
+      }));
+
+    } catch (err: any) {
+      this.session = null;
+      this.logger.error('Error getProjects SAP SL:', err?.message ?? err);
+      throw new InternalServerErrorException(
+        `SAP Projects: ${err?.message ?? 'Error desconocido'}`,
+      );
+    }
+  }
+
   // ── Sesión: POST /Login → B1SESSION cookie ────────────────────────────────
 
   private async getSession(): Promise<string> {
@@ -448,6 +777,20 @@ export class SapService {
       return this.session.cookie;
     }
 
+    if (this.sessionLock != null) {
+      return this.sessionLock;
+    }
+
+    this.sessionLock = this.doLogin();
+    const cookie = await this.sessionLock;
+    this.sessionLock = null;
+
+    this.session = { cookie, expiresAt: Date.now() + this.SESSION_TTL_MS };
+    this.logger.log('Sesión SAP SL establecida');
+    return cookie;
+  }
+
+  private async doLogin(): Promise<string> {
     this.logger.log('Iniciando sesión SAP SL...');
 
     const body = JSON.stringify({
@@ -492,8 +835,6 @@ export class SapService {
       req.end();
     });
 
-    this.session = { cookie, expiresAt: Date.now() + this.SESSION_TTL_MS };
-    this.logger.log('Sesión SAP SL establecida');
     return cookie;
   }
 

@@ -1,6 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Inject } from '@nestjs/common';
 import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
 import { IPerfilesRepository } from './perfiles.repository.interface';
 import { Perfil } from '../interfaces/perfil.interface';

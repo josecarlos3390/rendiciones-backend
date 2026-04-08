@@ -6,6 +6,7 @@ import { IRendMRepository } from './repositories/rend-m.repository.interface';
 import { CreateRendMDto }   from './dto/create-rend-m.dto';
 import { UpdateRendMDto }   from './dto/update-rend-m.dto';
 import { PaginationDto }    from '../../common/dto/pagination.dto';
+import { AdjuntosService } from '../adjuntos/adjuntos.service';
 
 @Injectable()
 export class RendMService {
@@ -14,18 +15,25 @@ export class RendMService {
   constructor(
     @Inject('REND_M_REPOSITORY')
     private readonly repo: IRendMRepository,
+    private readonly adjuntosService: AdjuntosService,
   ) {}
 
   /** Filtra siempre por U_IdUsuario + U_IdPerfil (cuando se provee), tanto ADMIN como USER */
-  async findAll(role: string, idUsuario: string, idPerfil: number | undefined, pagination: PaginationDto) {
+  async findAll(
+    role: string,
+    idUsuario: string,
+    idPerfil: number | undefined,
+    pagination: PaginationDto,
+    estados?: number[],
+  ) {
     const page  = pagination.page  ?? 1;
     const limit = pagination.limit ?? 50;
-    return this.repo.findByUser(idUsuario, idPerfil, page, limit);
+    return this.repo.findByUser(idUsuario, idPerfil, page, limit, estados);
   }
 
   /**
    * Rendiciones de subordinados del aprobador.
-   * estados: array de números (1=abierto, 3=aprobado, 4=enviado, 5=sync, 6=error)
+   * estados: array de números (1=abierto, 2=cerrado, 3=eliminado, 4=enviado, 5=sync, 6=error, 7=aprobado)
    * Si estados vacío → todos los estados.
    */
   async findSubordinados(
@@ -106,8 +114,8 @@ export class RendMService {
     return this.repo.isSubordinado(idUsuario, loginAprobador);
   }
 
-  async getStats(idUsuario: string, isAdmin: boolean) {
-    return this.repo.getStats(idUsuario, isAdmin);
+  async getStats(idUsuario: string, isAdmin: boolean, idPerfil?: number) {
+    return this.repo.getStats(idUsuario, isAdmin, idPerfil);
   }
 
   /** Cambia el estado de la rendición — usado por el módulo de aprobaciones */
@@ -132,6 +140,17 @@ export class RendMService {
       }
     }
 
+    // Borrado en cascada: eliminar adjuntos primero (archivos físicos + BD)
+    this.logger.log(`Eliminando adjuntos de la rendición ${id}...`);
+    const { affected: adjuntosEliminados, errores } = await this.adjuntosService.removeByRendicion(id);
+    
+    if (errores.length > 0) {
+      this.logger.warn(`Errores al eliminar algunos adjuntos de la rendición ${id}: ${errores.join(', ')}`);
+    } else if (adjuntosEliminados > 0) {
+      this.logger.log(`Se eliminaron ${adjuntosEliminados} adjuntos de la rendición ${id}`);
+    }
+
+    // Ahora eliminar la rendición (cabecera + detalle se maneja en el repositorio)
     return this.repo.remove(id);
   }
 }

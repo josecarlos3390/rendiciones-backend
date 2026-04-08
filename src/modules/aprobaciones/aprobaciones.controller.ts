@@ -1,11 +1,11 @@
 import {
   Controller, Get, Post, Param, ParseIntPipe,
-  Body, Req, Query,
+  Body, Req,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags, ApiOperation, ApiPropertyOptional } from '@nestjs/swagger';
 import { AprobacionesService } from './aprobaciones.service';
 import { IsOptional, IsString, MaxLength } from 'class-validator';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+
 import { Throttle } from '@nestjs/throttler'; 
 
 class AccionAprobacionDto {
@@ -20,18 +20,32 @@ class AccionAprobacionDto {
 export class AprobacionesController {
   constructor(private readonly svc: AprobacionesService) {}
 
-  /** Rendiciones pendientes de aprobación para el usuario autenticado */
+  /** Rendiciones pendientes de aprobación para el usuario autenticado (nivel 1) */
   @Get('pendientes')
   @ApiOperation({ summary: 'Listar rendiciones pendientes de mi aprobación' })
   getPendientes(@Req() req: any) {
     return this.svc.getPendientes(req.user.username);
   }
 
-  /** Contador para el badge del sidebar */
+  /** Rendiciones pendientes de nivel 2 (aprobadas por nivel 1) */
+  @Get('pendientes-nivel2')
+  @ApiOperation({ summary: 'Listar rendiciones de nivel 2 pendientes de mi aprobación' })
+  getPendientesNivel2(@Req() req: any) {
+    return this.svc.getPendientesNivel2(req.user.username);
+  }
+
+  /** Contador para el badge del sidebar (nivel 1) */
   @Get('count')
   @ApiOperation({ summary: 'Contar rendiciones pendientes de mi aprobación' })
   countPendientes(@Req() req: any) {
     return this.svc.countPendientes(req.user.username);
+  }
+
+  /** Contador de nivel 2 para el badge del sidebar */
+  @Get('count-nivel2')
+  @ApiOperation({ summary: 'Contar rendiciones de nivel 2 pendientes de mi aprobación' })
+  countPendientesNivel2(@Req() req: any) {
+    return this.svc.countPendientesNivel2(req.user.username);
   }
 
   /** Niveles de aprobación de una rendición */

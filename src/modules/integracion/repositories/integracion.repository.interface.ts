@@ -12,8 +12,10 @@ export interface RendSync {
 export interface IIntegracionRepository {
   findByRendicion(idRendicion: number): Promise<RendSync[]>;
   findPendientes(): Promise<any[]>;
+  findPendientesByAprobador(loginAprob: string, cascada: boolean): Promise<any[]>;
   findMisRendiciones(idUsuario: string): Promise<any[]>;
   countPendientes(): Promise<number>;
+  countPendientesByAprobador(loginAprob: string, cascada: boolean): Promise<number>;
   create(data: {
     idRendicion: number;
     estado:      string;

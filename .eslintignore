@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+coverage/
+
+# Logs
+logs/
+*.log
+
+# Uploads
+uploads/
+
+# Config files
+.eslintrc.js
+
+# Generated files
+package-lock.json

@@ -10,33 +10,39 @@ interface SlSession {
 }
 
 interface JournalLine {
-  AccountCode:  string;
-  ShortName?:   string;
-  Credit:       number;
-  Debit:        number;
-  U_CARDNAME:   string;
-  U_FECHAFAC:   string;
-  U_NUM_FACT:   number;
-  U_NUMORDEN:   number;
-  U_NUMPOL:     string;
-  U_EXENTO?:    number;
-  U_ICE:        number;
-  U_IMPORTE:    number;
-  U_TIPODOC:    number;
-  U_DESCTOBR:   number;
-  U_BOLBSP:     number;
-  U_CODFORPI:   string;
-  U_NROTRAM:    string;
-  U_TASACERO:   number;
-  U_ESTADOFC:   string;
-  U_NumDoc:     number;
-  U_NumAuto:    string;
-  U_NIT:        string;
-  U_IEHD:       number;
-  U_IPJ:        number;
-  U_TASAS:      number;
-  U_OP_EXENTO:  number;
-  U_B_cuf:      string;
+  AccountCode?:  string;
+  ShortName?:    string;
+  Credit:        number;
+  Debit:         number;
+  U_CARDNAME:    string;
+  U_FECHAFAC:    string;
+  U_NUM_FACT:    number;
+  U_NUMORDEN:    number;
+  U_NUMPOL:      string;
+  U_EXENTO?:     number;
+  U_ICE:         number;
+  U_IMPORTE:     number;
+  U_TIPODOC:     number;
+  U_DESCTOBR:    number;
+  U_BOLBSP:      number;
+  U_CODFORPI:    string;
+  U_NROTRAM:     string;
+  U_TASACERO:    number;
+  U_ESTADOFC:    string;
+  U_NumDoc:      number;
+  U_NumAuto:     string;
+  U_NIT:         string;
+  U_IEHD:        number;
+  U_IPJ:         number;
+  U_TASAS:       number;
+  U_OP_EXENTO:   number;
+  U_B_cuf:       string;
+  ProfitCode?:    string;
+  OcrCode2?:      string;
+  OcrCode3?:      string;
+  OcrCode4?:      string;
+  OcrCode5?:      string;
+  ProjectCode?:   string;
 }
 
 @Injectable()
@@ -131,6 +137,7 @@ export class SapSlService {
     rend:              RendM,
     detalles:          RendD[],
     distribucionesMap: Map<number, RendPrctj[]> = new Map(),
+    tasaCambio?:       number,  // Tasa BOB → USD (solo cuando BolivianosEs=SISTEMA)
   ): object {
     const fechaCabecera = rend.U_FechaFinal?.substring(0, 10)
                        ?? new Date().toISOString().substring(0, 10);
@@ -139,6 +146,12 @@ export class SapSlService {
 
     // Acumulador para la línea de contrapartida final
     let totalDebitoNeto = 0;
+
+    // Helper para convertir montos según tasa de cambio
+    const conv = (monto: number): number => {
+      if (!tasaCambio || tasaCambio <= 0) return monto;
+      return Math.round((monto / tasaCambio) * 100) / 100;
+    };
 
     for (const d of detalles) {
       if (!d.U_RD_Cuenta) continue;   // sin cuenta asignada → saltar
@@ -172,10 +185,10 @@ export class SapSlService {
         lines.push({
           ...base,
           AccountCode: d.U_RD_Cuenta,
-          Debit:       debitoGasto,
+          Debit:       conv(debitoGasto),  // Convertido a moneda local si aplica
           Credit:      0,
-          U_IMPORTE:   bruto,
-          U_EXENTO:    exento,
+          U_IMPORTE:   bruto,              // Siempre en BOB
+          U_EXENTO:    exento,             // Siempre en BOB
         });
         totalDebitoNeto += debitoGasto;
       } else {
@@ -190,15 +203,17 @@ export class SapSlService {
 
           lines.push({
             ...base,
-            // Usar la cuenta y dimensiones de la distribución
             AccountCode: dist.PRCT_RD_CUENTA || d.U_RD_Cuenta,
-            Debit:       debitoTramo,
+            Debit:       conv(debitoTramo),  // Convertido a moneda local si aplica
             Credit:      0,
-            U_IMPORTE:   montoTramo,
-            U_EXENTO:    Math.round(exento * dist.PRCT_PORCENTAJE / 100 * 100) / 100,
-            // Dimensiones propias de esta porción
-            ...(dist.PRCT_RD_N1     ? { U_COSTCENTER: dist.PRCT_RD_N1 } : {}),
-            ...(dist.PRCT_RD_PROYECTO ? { U_PROYECTO: dist.PRCT_RD_PROYECTO } : {}),
+            U_IMPORTE:   montoTramo,         // Siempre en BOB
+            U_EXENTO:    Math.round(exento * dist.PRCT_PORCENTAJE / 100 * 100) / 100, // Siempre en BOB
+            ...(dist.PRCT_RD_N1      ? { CostingCode:   dist.PRCT_RD_N1 }      : {}),
+            ...(dist.PRCT_RD_N2     ? { CostingCode2:  dist.PRCT_RD_N2 }     : {}),
+            ...(dist.PRCT_RD_N3     ? { CostingCode3:  dist.PRCT_RD_N3 }     : {}),
+            ...(dist.PRCT_RD_N4     ? { CostingCode4:  dist.PRCT_RD_N4 }     : {}),
+            ...(dist.PRCT_RD_N5     ? { CostingCode5:  dist.PRCT_RD_N5 }     : {}),
+            ...(dist.PRCT_RD_PROYECTO ? { ProjectCode:  dist.PRCT_RD_PROYECTO } : {}),
           });
           totalDebitoNeto += debitoTramo;
         }
@@ -210,9 +225,9 @@ export class SapSlService {
         lines.push({
           ...base,
           AccountCode: d.U_CuentaIVA,
-          Debit:       montoIVA,
+          Debit:       conv(montoIVA),  // Convertido a moneda local si aplica
           Credit:      0,
-          U_IMPORTE:   montoIVA,
+          U_IMPORTE:   montoIVA,        // Siempre en BOB
         });
         totalDebitoNeto += montoIVA;
       }
@@ -223,8 +238,8 @@ export class SapSlService {
           ...base,
           AccountCode: d.U_CuentaIT,
           Debit:       0,
-          Credit:      montoIT,
-          U_IMPORTE:   montoIT,
+          Credit:      conv(montoIT),  // Convertido a moneda local si aplica
+          U_IMPORTE:   montoIT,        // Siempre en BOB
         });
         totalDebitoNeto -= montoIT;
       }
@@ -235,8 +250,8 @@ export class SapSlService {
           ...base,
           AccountCode: d.U_CuentaRCIVA,
           Debit:       0,
-          Credit:      montoRCIVA,
-          U_IMPORTE:   montoRCIVA,
+          Credit:      conv(montoRCIVA),  // Convertido a moneda local si aplica
+          U_IMPORTE:   montoRCIVA,        // Siempre en BOB
         });
         totalDebitoNeto -= montoRCIVA;
       }
@@ -247,8 +262,8 @@ export class SapSlService {
           ...base,
           AccountCode: d.U_CuentaIUE,
           Debit:       0,
-          Credit:      montoIUE,
-          U_IMPORTE:   montoIUE,
+          Credit:      conv(montoIUE),  // Convertido a moneda local si aplica
+          U_IMPORTE:   montoIUE,        // Siempre en BOB
         });
         totalDebitoNeto -= montoIUE;
       }
@@ -264,7 +279,7 @@ export class SapSlService {
     // Cuenta NO ASOCIADA → AccountCode = U_Cuenta (código contable directo)
     const lineaFinalBase = {
       Debit:        0,
-      Credit:       Math.abs(totalDebitoNeto),
+      Credit:       conv(Math.abs(totalDebitoNeto)),  // Convertido a moneda local si aplica
       U_CARDNAME:   rend.U_NombreEmpleado?.trim() || rend.U_NomUsuario || '',
       U_FECHAFAC:   fechaCabecera,
       U_NUM_FACT:   0,
@@ -272,7 +287,7 @@ export class SapSlService {
       U_NUMPOL:     '0',
       U_EXENTO:     0,
       U_ICE:        0,
-      U_IMPORTE:    Math.abs(totalDebitoNeto),
+      U_IMPORTE:    Math.abs(totalDebitoNeto),  // Siempre en BOB
       U_TIPODOC:    10,
       U_DESCTOBR:   0,
       U_BOLBSP:     0,
@@ -404,5 +419,73 @@ export class SapSlService {
       U_OP_EXENTO: 0,
       U_B_cuf:     cuf,
     };
+  }
+
+  // ── Métodos de conversión de moneda ───────────────────────────────────────
+
+  /**
+   * Obtener el tipo de cambio desde SAP Service Layer
+   * 
+   * @param session - Sesión de SAP Service Layer
+   * @param moneda - Código de moneda (ej: 'USD')
+   * @param fecha - Fecha en formato YYYY-MM-DD
+   * @returns Tasa de cambio (cuántos BOB = 1 unidad de moneda)
+   */
+  async obtenerTasaCambio(
+    session: SlSession,
+    moneda: string,
+    fecha: string,
+  ): Promise<number> {
+    // Formatear fecha de YYYY-MM-DD a YYYYMMDD
+    const fechaFormateada = fecha.replace(/-/g, '');
+    
+    const url = `${this.baseUrl}/SBOBobService_GetCurrencyRate`;
+    const body = JSON.stringify({
+      Currency: moneda.toUpperCase(),
+      Date: fechaFormateada,
+    });
+
+    this.logger.log(`Consultando tipo de cambio: ${moneda} en fecha ${fecha}`);
+
+    const res = await this.fetchSl(url, { 
+      method: 'POST', 
+      body,
+    }, session);
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      throw new InternalServerErrorException(
+        `Error al obtener tipo de cambio (${res.status}): ${text}`
+      );
+    }
+
+    const data = await res.json();
+    const tasa = data?.Rate ?? data?.value?.Rate;
+
+    if (!tasa || tasa <= 0) {
+      throw new InternalServerErrorException(
+        `Tipo de cambio inválido para ${moneda} en fecha ${fecha}: ${tasa}`
+      );
+    }
+
+    this.logger.log(`Tipo de cambio obtenido: ${tasa} BOB/${moneda}`);
+    return tasa;
+  }
+
+  /**
+   * Convertir monto de BOB a moneda local (USD) cuando BolivianosEs=SISTEMA
+   * 
+   * @param montoBOB - Monto en Bolivianos
+   * @param tasaCambio - Tasa BOB → USD
+   * @returns Monto convertido con 2 decimales
+   */
+  convertirAMonedaLocal(montoBOB: number, tasaCambio: number): number {
+    if (!tasaCambio || tasaCambio <= 0) {
+      return montoBOB; // Sin conversión si no hay tasa válida
+    }
+    
+    // BOB → USD: dividir por tasa
+    const convertido = montoBOB / tasaCambio;
+    return Math.round(convertido * 100) / 100;
   }
 }

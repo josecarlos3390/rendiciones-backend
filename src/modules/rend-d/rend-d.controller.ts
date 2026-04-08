@@ -64,6 +64,8 @@ export class RendDController {
       Number(req.user.sub),
       req.user.role,
       String(req.user.sub),
+      req.user.username,
+      req.user.esAprobador === true,
       dto,
     );
   }
@@ -94,6 +96,12 @@ export class RendDController {
     @Param('idRD', ParseIntPipe) idRD: number,
     @Req() req: any,
   ) {
-    return this.rendDService.remove(idRendicion, idRD, req.user.role, String(req.user.sub));
+    return this.rendDService.remove(
+      idRendicion, idRD,
+      req.user.role,
+      String(req.user.sub),
+      req.user.username,
+      req.user.esAprobador === true,
+    );
   }
 }

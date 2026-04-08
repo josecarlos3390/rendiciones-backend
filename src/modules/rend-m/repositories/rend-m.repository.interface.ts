@@ -9,6 +9,7 @@ export interface IRendMRepository {
     idPerfil:  number | undefined,
     page:      number,
     limit:     number,
+    estados?:  number[],
   ): Promise<PaginatedResult<RendM>>;
   findBySubordinados(
     loginAprobador: string,
@@ -26,5 +27,5 @@ export interface IRendMRepository {
   remove(id: number): Promise<{ affected: number }>;
   updateEstado(id: number, estado: number): Promise<void>;
   updatePreliminar(id: number, preliminar: string): Promise<void>;
-  getStats(idUsuario: string, isAdmin: boolean): Promise<any>;
+  getStats(idUsuario: string, isAdmin: boolean, idPerfil?: number): Promise<any>;
 }

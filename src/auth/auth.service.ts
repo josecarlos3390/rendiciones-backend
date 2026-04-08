@@ -5,6 +5,7 @@ import { IDatabaseService, DATABASE_SERVICE } from '../database/interfaces/datab
 import { LoginDto }      from './dto/login.dto';
 import { JwtPayload }    from './interfaces/jwt-payload.interface';
 import { tbl }           from '../database/db-table.helper';
+import { LoginAttemptsService } from './services/login-attempts.service';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -19,6 +20,7 @@ export class AuthService {
     private readonly db:            IDatabaseService,
     private readonly jwtService:    JwtService,
     private readonly configService: ConfigService,
+    private readonly loginAttempts: LoginAttemptsService,
   ) {}
 
   private get schema(): string { return this.configService.get<string>('hana.schema'); }
@@ -32,6 +34,9 @@ export class AuthService {
   async login(dto: LoginDto) {
     const { password } = dto;
     const username = dto.username.trim().toLowerCase();
+
+    // Verificar si la cuenta está bloqueada por intentos fallidos
+    this.loginAttempts.checkLockout(username);
 
     const rows = await this.db.query<any>(
       `SELECT "U_IdU", "U_Login", "U_Pass", "U_SuperUser", "U_NomUser",
@@ -48,6 +53,8 @@ export class AuthService {
 
     if (!user) {
       this.logger.warn(`Usuario no encontrado: ${username}`);
+      // Registrar intento fallido
+      this.loginAttempts.recordFailedAttempt(username);
       await bcrypt.compare(password, this.DUMMY_HASH);
       throw new UnauthorizedException('Credenciales invalidas');
     }
@@ -82,6 +89,8 @@ export class AuthService {
     this.logger.debug(`bcrypt.compare: ${isValid}`);
 
     if (!isValid) {
+      // Registrar intento fallido
+      this.loginAttempts.recordFailedAttempt(username);
       throw new UnauthorizedException('Credenciales invalidas');
     }
 
@@ -93,6 +102,8 @@ export class AuthService {
       throw new UnauthorizedException('Tu cuenta ha expirado. Contacta al administrador.');
     }
 
+    // Login exitoso - limpiar intentos fallidos
+    this.loginAttempts.recordSuccessfulLogin(username);
     this.logger.log(`Login exitoso: ${username}`);
 
     const payload: JwtPayload = {

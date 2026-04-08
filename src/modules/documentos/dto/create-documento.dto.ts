@@ -1,6 +1,6 @@
 import {
   IsInt, IsString, IsNotEmpty, IsOptional,
-  IsDecimal, IsIn, MaxLength, Min, IsNumber,
+  IsIn, MaxLength, Min, IsNumber,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';

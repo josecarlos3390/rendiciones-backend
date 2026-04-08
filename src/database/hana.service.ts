@@ -39,7 +39,7 @@ export class HanaService implements IDatabaseService, OnModuleInit, OnModuleDest
     this.poolReady = true;
     this.logger.log('Motor de base de datos activo: HANA');
     this.createPool();
-    this.checkConnectivity();
+    void this.checkConnectivity();
   }
 
   async onModuleDestroy() {
@@ -112,19 +112,34 @@ export class HanaService implements IDatabaseService, OnModuleInit, OnModuleDest
   /** SELECT — itera con next() para evitar el error -20042 en result sets vacíos */
   async query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
     const conn = await this.getConnection();
+    let rs: any = null;
+    
     try {
       return await new Promise<T[]>((resolve, reject) => {
         const stmt = conn.prepare(sql);
-        stmt.execQuery(params, (err, rs: any) => {
-          if (err) { this.logger.error(`Query error: ${sql}`, err); return reject(err); }
-
+        stmt.execQuery(params, (err, resultSet: any) => {
+          if (err) { 
+            this.logger.error(`Query error: ${sql}`, err); 
+            return reject(err); 
+          }
+          
+          rs = resultSet;
           const rows: T[] = [];
+          
           const fetchNext = () => {
             rs.next((err2: any, hasRow: boolean) => {
-              if (err2) { this.logger.error(`rs.next error`, err2); return reject(err2); }
-              if (!hasRow) { rs.close(); return resolve(rows); }
+              if (err2) { 
+                this.logger.error(`rs.next error`, err2); 
+                return reject(err2); 
+              }
+              if (!hasRow) { 
+                return resolve(rows); 
+              }
               rs.getValues((err3: any, values: any) => {
-                if (err3) { this.logger.error(`getValues error`, err3); return reject(err3); }
+                if (err3) { 
+                  this.logger.error(`getValues error`, err3); 
+                  return reject(err3); 
+                }
                 rows.push(values as T);
                 fetchNext();
               });
@@ -134,6 +149,15 @@ export class HanaService implements IDatabaseService, OnModuleInit, OnModuleDest
         });
       });
     } finally {
+      // Asegurar que el result set siempre se cierre
+      if (rs) {
+        try {
+          rs.close();
+        } catch (err) {
+          // Ignorar errores al cerrar result set
+          this.logger.debug('Error al cerrar result set (ignorado)', err);
+        }
+      }
       this.releaseConnection(conn);
     }
   }
@@ -222,16 +246,43 @@ export class HanaService implements IDatabaseService, OnModuleInit, OnModuleDest
 
     const queryOnConn = <T>(sql: string, params: any[] = []): Promise<T[]> =>
       new Promise((resolve, reject) => {
+        let rs: any = null;
+        
+        const cleanup = () => {
+          if (rs) {
+            try {
+              rs.close();
+            } catch {
+              // Ignorar errores al cerrar
+            }
+          }
+        };
+        
         const stmt = conn.prepare(sql);
-        stmt.execQuery(params, (err, rs: any) => {
-          if (err) { logger.error(`[tx] Query error: ${sql}`, err); return reject(err); }
+        stmt.execQuery(params, (err, resultSet: any) => {
+          if (err) { 
+            logger.error(`[tx] Query error: ${sql}`, err); 
+            return reject(err); 
+          }
+          
+          rs = resultSet;
           const rows: T[] = [];
+          
           const fetchNext = () => {
             rs.next((err2: any, hasRow: boolean) => {
-              if (err2) return reject(err2);
-              if (!hasRow) { rs.close(); return resolve(rows); }
+              if (err2) {
+                cleanup();
+                return reject(err2);
+              }
+              if (!hasRow) { 
+                cleanup();
+                return resolve(rows); 
+              }
               rs.getValues((err3: any, values: any) => {
-                if (err3) return reject(err3);
+                if (err3) {
+                  cleanup();
+                  return reject(err3);
+                }
                 rows.push(values as T);
                 fetchNext();
               });

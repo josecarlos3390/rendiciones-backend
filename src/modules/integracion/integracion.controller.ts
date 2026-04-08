@@ -14,13 +14,19 @@ export class IntegracionController {
   @Get('pendientes')
   @Roles('ADMIN', 'USER')
   @ApiOperation({ summary: 'Rendiciones APROBADAS pendientes de sincronización con ERP' })
-  getPendientes() {
-    return this.svc.getPendientes();
+  getPendientes(@Req() req: any) {
+    const isAdmin      = req.user.role === 'ADMIN';
+    const sinAprobador = !req.user.nomSup?.trim();
+    return this.svc.getPendientes(
+      req.user.username,
+      isAdmin,
+      sinAprobador,
+    );
   }
 
   @Get('mis-rendiciones')
   @Roles('ADMIN', 'USER')
-  @ApiOperation({ summary: 'Rendiciones del usuario logueado en estados 3 (aprobado), 5 (sync) y 6 (error)' })
+  @ApiOperation({ summary: 'Rendiciones del usuario logueado en estados 7 (aprobado), 5 (sync) y 6 (error)' })
   getMisRendiciones(@Req() req: any) {
     return this.svc.getMisRendiciones(String(req.user.sub));
   }
@@ -28,8 +34,14 @@ export class IntegracionController {
   @Get('count')
   @Roles('ADMIN', 'USER')
   @ApiOperation({ summary: 'Contador de pendientes — badge sidebar' })
-  countPendientes() {
-    return this.svc.countPendientes();
+  countPendientes(@Req() req: any) {
+    const isAdmin      = req.user.role === 'ADMIN';
+    const sinAprobador = !req.user.nomSup?.trim();
+    return this.svc.countPendientes(
+      req.user.username,
+      isAdmin,
+      sinAprobador,
+    );
   }
 
   @Get(':id/historial')

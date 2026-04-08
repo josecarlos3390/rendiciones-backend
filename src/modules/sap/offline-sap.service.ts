@@ -37,10 +37,11 @@ export class OfflineSapService {
   private get dbType(): string {
     return this.config.get<string>('app.dbType', 'HANA').toUpperCase();
   }
-  private get DB_PROV(): string { return tbl(this.schema, 'REND_PROV',        this.dbType); }
-  private get DB_COA():  string { return tbl(this.schema, 'REND_COA',         this.dbType); }
-  private get DB_DIM():  string { return tbl(this.schema, 'REND_DIMENSIONES', this.dbType); }
-  private get DB_NR():   string { return tbl(this.schema, 'REND_NORMAS',      this.dbType); }
+  private get DB_PROV():      string { return tbl(this.schema, 'REND_PROV',        this.dbType); }
+  private get DB_COA():       string { return tbl(this.schema, 'REND_COA',         this.dbType); }
+  private get DB_DIM():       string { return tbl(this.schema, 'REND_DIMENSIONES', this.dbType); }
+  private get DB_NR():        string { return tbl(this.schema, 'REND_NORMAS',      this.dbType); }
+  private get DB_PROYECTOS(): string { return tbl(this.schema, 'REND_PROYECTOS',   this.dbType); }
 
   // ── Dimensiones y normas de reparto ─────────────────────────────────────────
 
@@ -159,9 +160,33 @@ export class OfflineSapService {
     }
 
     return rows.map(r => ({
-      cardCode: this.db.col(r, 'U_CODIGO'),
-      cardName: this.db.col(r, 'U_RAZON_SOCIAL'),
+      cardCode:   this.db.col(r, 'U_CODIGO'),
+      cardName:   this.db.col(r, 'U_RAZON_SOCIAL'),
+      licTradNum: this.db.col(r, 'U_NIT') || undefined,
     }));
+  }
+
+  async getProveedoresAll(car: string, filtro: string): Promise<EmpleadoDto[]> {
+    return this.getProveedores(car, filtro, '');
+  }
+
+  async getProveedoresPaginado(car: string, filtro: string): Promise<EmpleadoDto[]> {
+    // En modo OFFLINE no necesitamos paginación, usamos el método existente
+    return this.getProveedores(car, filtro, '');
+  }
+
+  async getEmpleadosPaginado(car: string, filtro: string): Promise<EmpleadoDto[]> {
+    // En modo OFFLINE no necesitamos paginación, usamos el método existente
+    return this.getEmpleados(car, filtro);
+  }
+
+  async getCuentasPaginado(
+    config: PerfilCuentaConfig,
+    _listaCuentas: CuentaDto[] = [],
+  ): Promise<CuentaDto[]> {
+    // En modo OFFLINE no necesitamos paginación
+    // Llamamos a getCuentasByPerfil sin búsqueda para obtener todas las cuentas filtradas
+    return this.getCuentasByPerfil(config, '', []);
   }
 
   // ── Cuentas filtradas por perfil ─────────────────────────────────────────────
@@ -230,5 +255,25 @@ export class OfflineSapService {
       code: this.db.col(r, 'COA_CODE'),
       name: this.db.col(r, 'COA_NAME'),
     }));
+  }
+
+  /**
+   * Proyectos activos desde tabla local REND_PROYECTOS.
+   * En modo OFFLINE se asume que hay una tabla sincronizada.
+   */
+  async getProjects(): Promise<{ code: string; name: string }[]> {
+    // Si no existe tabla de proyectos, retornar lista vacía
+    try {
+      const rows = await this.db.query<any>(
+        `SELECT "PROY_CODE", "PROY_NAME" FROM ${this.DB_PROYECTOS} WHERE "PROY_ACTIVO" = 'Y' ORDER BY "PROY_CODE"`,
+      );
+      return rows.map(r => ({
+        code: this.db.col(r, 'PROY_CODE'),
+        name: this.db.col(r, 'PROY_NAME'),
+      }));
+    } catch {
+      // Si la tabla no existe o hay error, retornar vacío
+      return [];
+    }
   }
 }

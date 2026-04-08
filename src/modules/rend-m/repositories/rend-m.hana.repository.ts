@@ -1,6 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Inject } from '@nestjs/common';
 import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
 import { IRendMRepository } from './rend-m.repository.interface';
 import { RendM } from '../interfaces/rend-m.interface';
@@ -42,15 +41,26 @@ export class RendMHanaRepository implements IRendMRepository {
     idPerfil:  number | undefined,
     page:      number,
     limit:     number,
+    estados?:  number[],
   ): Promise<PaginatedResult<RendM>> {
     const offset = (page - 1) * limit;
     const hasPerfilFilter = idPerfil !== undefined;
+    const hasEstados      = estados && estados.length > 0;
 
     // WHERE dinámico según filtros
-    const where  = hasPerfilFilter
-      ? `WHERE "U_IdUsuario" = ? AND "U_IdPerfil" = ?`
-      : `WHERE "U_IdUsuario" = ?`;
-    const params = hasPerfilFilter ? [idUsuario, idPerfil] : [idUsuario];
+    const conditions: string[] = [`"U_IdUsuario" = ?`];
+    const params: any[] = [idUsuario];
+
+    if (hasPerfilFilter) {
+      conditions.push(`"U_IdPerfil" = ?`);
+      params.push(idPerfil);
+    }
+    if (hasEstados) {
+      conditions.push(`"U_Estado" IN (${estados.map(() => '?').join(',')})`);
+      params.push(...estados);
+    }
+
+    const where = `WHERE ${conditions.join(' AND ')}`;
 
     // COUNT para el total
     const countRow = await this.db.queryOne<Record<string, number>>(
@@ -303,19 +313,25 @@ export class RendMHanaRepository implements IRendMRepository {
     );
   }
 
-  async getStats(idUsuario: string, isAdmin: boolean): Promise<any> {
+  async getStats(idUsuario: string, isAdmin: boolean, idPerfil?: number): Promise<any> {
+    const hasPerfilFilter = idPerfil !== undefined;
+    const where = hasPerfilFilter
+      ? `WHERE "U_IdUsuario" = ? AND "U_IdPerfil" = ?`
+      : `WHERE "U_IdUsuario" = ?`;
+    const params = hasPerfilFilter ? [idUsuario, idPerfil] : [idUsuario];
+
     // Siempre consultar las propias del usuario
     const rowsUser = await this.db.query<any>(
       `SELECT
         COUNT(*) AS "total",
         SUM(CASE WHEN "U_Estado" = 1 THEN 1 ELSE 0 END) AS "abiertas",
         SUM(CASE WHEN "U_Estado" = 4 THEN 1 ELSE 0 END) AS "enviadas",
-        SUM(CASE WHEN "U_Estado" = 3 THEN 1 ELSE 0 END) AS "aprobadas",
+        SUM(CASE WHEN "U_Estado" = 7 THEN 1 ELSE 0 END) AS "aprobadas",
         SUM(CASE WHEN "U_Estado" = 2 THEN 1 ELSE 0 END) AS "cerradas",
         SUM(CASE WHEN "U_Estado" = 5 THEN 1 ELSE 0 END) AS "sincronizadas",
         COALESCE(SUM("U_Monto"), 0) AS "montoTotal"
-      FROM ${this.DB} WHERE "U_IdUsuario" = ?`,
-      [idUsuario],
+      FROM ${this.DB} ${where}`,
+      params,
     );
     const r = rowsUser[0];
     const stats: any = {

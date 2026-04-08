@@ -1,6 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Inject } from '@nestjs/common';
 import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
 import { tbl } from '../../../database/db-table.helper';
 import { IRendDRepository } from './rend-d.repository.interface';
@@ -33,26 +32,6 @@ const SAFE_COLS = `
   COALESCE(NULLIF(d."U_CuentaRCIVA", ''), c."U_RCIVAcuenta") AS "U_CuentaRCIVA"
 `;
 
-// Para queries SIN JOIN (create/update/findAll simple) — sin prefijo d.
-const SAFE_COLS_SIMPLE = `
-  "U_RD_IdRD", "U_RD_RM_IdRendicion", "U_RD_IdUsuario",
-  "U_RD_Cuenta", "U_RD_NombreCuenta", "U_RD_Concepto",
-  "U_RD_Importe", "U_RD_Descuento", "U_RD_TasaCero",
-  "U_RD_N1", "U_RD_N2", "U_RD_N3", "U_RD_N4", "U_RD_N5",
-  "U_RD_Proyecto", "U_RD_Fecha",
-  "U_RD_IdTipoDoc", "U_RD_IdDoc", "U_RD_TipoDoc",
-  "U_RD_Partida", "U_RD_Exento", "U_RD_Estado",
-  "U_RD_ImpRet", "U_RD_Total",
-  "U_RD_NumDocumento", "U_RD_NroAutor", "U_RD_Ctrl",
-  "U_RD_NIT", "U_RD_CodProv", "U_RD_Prov",
-  "U_MontoIVA", "U_MontoIT", "U_MontoIUE", "U_MontoRCIVA",
-  "U_CuentaIVA", "U_CuentaIT", "U_CuentaIUE", "U_CuentaRCIVA",
-  "U_ImporteBs", "U_EXENTOBS", "U_DESCTOBS",
-  "U_RD_Marcado", "U_CTAEXENTO",
-  "U_RD_AUXILIAR1", "U_RD_AUXILIAR2", "U_RD_AUXILIAR3", "U_RD_AUXILIAR4",
-  "U_TASA", "U_CUF", "U_GIFTCARD", "U_ICE", "U_RD_NRO_OT"
-`;
-
 @Injectable()
 export class RendDHanaRepository implements IRendDRepository {
   private readonly logger = new Logger(RendDHanaRepository.name);
@@ -67,6 +46,14 @@ export class RendDHanaRepository implements IRendDRepository {
     private readonly db: IDatabaseService,
     private readonly configService: ConfigService,
   ) {}
+
+  // ── Helper: Normalizar valores vacíos ───────────────────────
+  // Convierte null/undefined a string vacío para campos string
+  // Evita que HANA guarde "?" en lugar de vacío
+  private _normalizeEmpty(val: any): string | null {
+    if (val === null || val === undefined || val === '?') return '';
+    return String(val);
+  }
 
   // ── Normalización ─────────────────────────────────────────────
   // Postgres devuelve DECIMAL/NUMERIC como strings.
@@ -115,7 +102,7 @@ export class RendDHanaRepository implements IRendDRepository {
       U_RD_Fecha:          this._str(row, 'U_RD_Fecha'),
       U_RD_IdTipoDoc:      this._num(row, 'U_RD_IdTipoDoc'),
       U_RD_IdDoc:          this._numNull(row, 'U_RD_IdDoc'),
-      U_RD_TipoDoc:        this._str(row, 'U_RD_TipoDoc'),
+      U_RD_TipoDoc:        this._num(row, 'U_RD_TipoDoc'),
       U_RD_Partida:        this._str(row, 'U_RD_Partida', null as any) || null,
       U_RD_Exento:         this._numNull(row, 'U_RD_Exento'),
       U_RD_Estado:         this._num(row, 'U_RD_Estado'),
@@ -193,6 +180,80 @@ export class RendDHanaRepository implements IRendDRepository {
       );
       const newId = Number(this.db.col(idRows[0], 'newId')) || 1;
 
+      // Preparar nombre de cuenta concatenado: cuenta-descripcion
+      const nombreCuentaConcatenado = dto.cuenta 
+        ? `${dto.cuenta}-${dto.nombreCuenta || ''}` 
+        : dto.nombreCuenta;
+      
+      // Proveedor eventual (PL*) va vacío en U_RD_CodProv, solo se guarda NIT y Razon Social
+      const codProvLimpio = dto.codProv?.startsWith('PL') ? null : (dto.codProv ?? null);
+
+      // Preparar valores asegurando que null se convierta a '' para campos string
+      // (evita que HANA guarde "?" en lugar de vacío)
+      const values = [
+        newId,
+        idRendicion, 
+        idUsuario,
+        this._normalizeEmpty(dto.cuenta), 
+        this._normalizeEmpty(nombreCuentaConcatenado), 
+        this._normalizeEmpty(dto.concepto),
+        dto.importe ?? 0, 
+        dto.descuento ?? 0, 
+        dto.tasaCero ?? null,
+        this._normalizeEmpty(dto.n1), 
+        this._normalizeEmpty(dto.n2), 
+        this._normalizeEmpty(dto.n3), 
+        this._normalizeEmpty(dto.n4), 
+        this._normalizeEmpty(dto.n5),
+        this._normalizeEmpty(dto.proyecto), 
+        dto.fecha,
+        dto.idTipoDoc ?? 1, 
+        dto.tipoDoc ?? null, 
+        this._normalizeEmpty(dto.tipoDocName),
+        this._normalizeEmpty(dto.partida), 
+        dto.exento ?? null, 
+        1, // U_RD_Estado
+        dto.impRet ?? null, 
+        dto.total ?? null,
+        this._normalizeEmpty(dto.numDocumento), 
+        this._normalizeEmpty(dto.nroAutor), 
+        this._normalizeEmpty(dto.ctrl),
+        this._normalizeEmpty(dto.nit), 
+        this._normalizeEmpty(codProvLimpio), 
+        this._normalizeEmpty(dto.prov),
+        // Montos impuestos
+        dto.montoIVA ?? 0, 
+        dto.montoIT ?? 0, 
+        dto.montoIUE ?? 0, 
+        dto.montoRCIVA ?? 0,
+        // Cuentas impuestos - usar '' en lugar de null
+        this._normalizeEmpty(dto.cuentaIVA), 
+        this._normalizeEmpty(dto.cuentaIT), 
+        this._normalizeEmpty(dto.cuentaIUE), 
+        this._normalizeEmpty(dto.cuentaRCIVA),
+        // Montos en Bs - 0 en lugar de null
+        dto.importeBs ?? dto.importe ?? 0, 
+        dto.exentoBs ?? 0, 
+        dto.desctoBs ?? 0,
+        // Marcado y CTA Exento
+        0, // U_RD_Marcado
+        this._normalizeEmpty(dto.ctaExento),
+        // Auxiliares
+        this._normalizeEmpty(dto.auxiliar1), 
+        this._normalizeEmpty(dto.auxiliar2), 
+        this._normalizeEmpty(dto.auxiliar3), 
+        this._normalizeEmpty(dto.auxiliar4),
+        // Tasa, CUF, GiftCard, ICE, NRO_OT
+        dto.tasa ?? null, 
+        this._normalizeEmpty(dto.cuf), 
+        dto.giftCard ?? 0,
+        dto.ice ?? 0, 
+        this._normalizeEmpty(dto.nroOT),
+      ];
+
+      // Debug: verificar conteo
+      this.logger.debug(`INSERT REND_D con ${values.length} valores`);
+
       await this.db.execute(
         `INSERT INTO ${this.DB} (
             "U_RD_IdRD",
@@ -212,54 +273,8 @@ export class RendDHanaRepository implements IRendDRepository {
             "U_RD_Marcado", "U_CTAEXENTO",
             "U_RD_AUXILIAR1", "U_RD_AUXILIAR2", "U_RD_AUXILIAR3", "U_RD_AUXILIAR4",
             "U_TASA", "U_CUF", "U_GIFTCARD", "U_ICE", "U_RD_NRO_OT"
-          )
-          VALUES (
-            ?, ?, ?,
-            ?, ?, ?,
-            ?, ?, ?,
-            ?, ?, ?, ?, ?,
-            ?, ?,
-            ?, ?, ?,
-            ?, ?, ?,
-            ?, ?,
-            ?, ?, ?,
-            ?, ?, ?,
-            ?, ?, ?, ?,
-            ?, ?, ?, ?,
-            ?, ?, ?,
-            ?, ?,
-            ?, ?, ?, ?,
-            ?, ?, ?, ?, ?
-          )`,
-        [
-          newId,
-          idRendicion, idUsuario,
-          dto.cuenta        ?? null, dto.nombreCuenta  ?? null, dto.concepto,
-          dto.importe, dto.descuento ?? 0, dto.tasaCero ?? null,
-          dto.n1 ?? null, dto.n2 ?? null, dto.n3 ?? null, dto.n4 ?? null, dto.n5 ?? null,
-          dto.proyecto ?? null, dto.fecha,
-          dto.idTipoDoc, dto.idDoc ?? null, dto.tipoDoc ?? '',
-          dto.partida ?? null, dto.exento ?? null, 1,
-          dto.impRet ?? null, dto.total ?? null,
-          dto.numDocumento ?? null, dto.nroAutor ?? null, dto.ctrl ?? null,
-          dto.nit ?? '', dto.codProv ?? null, dto.prov ?? null,
-          // NOT NULL DECIMAL — enviar 0 en lugar de null
-          dto.montoIVA  ?? 0, dto.montoIT  ?? 0, dto.montoIUE  ?? 0, dto.montoRCIVA ?? 0,
-          // cuentas de impuesto — TRUE (nullable)
-          dto.cuentaIVA ?? null, dto.cuentaIT ?? null, dto.cuentaIUE ?? null, dto.cuentaRCIVA ?? null,
-          // ImporteBs/ExentoBs/DesctoBs — TRUE (nullable)
-          dto.importeBs ?? null, dto.exentoBs ?? null, dto.desctoBs ?? null,
-          // U_RD_Marcado NOT NULL TINYINT DEFAULT 0 — enviar 0 (número, no string)
-          0,
-          // U_CTAEXENTO NOT NULL — enviar string vacío en lugar de null
-          dto.ctaExento ?? '',
-          // U_RD_AUXILIAR1-4 NOT NULL — enviar string vacío en lugar de null
-          dto.auxiliar1 ?? '', dto.auxiliar2 ?? '', dto.auxiliar3 ?? '', dto.auxiliar4 ?? '',
-          // U_TASA TRUE (nullable), U_CUF TRUE (nullable), U_GIFTCARD TRUE DEFAULT 0
-          dto.tasa ?? null, dto.cuf ?? null, dto.giftCard ?? 0,
-          // U_ICE NOT NULL DEFAULT 0, U_RD_NRO_OT NOT NULL
-          dto.ice ?? 0, dto.nroOT ?? '',
-        ],
+          ) VALUES (${values.map(() => '?').join(', ')})`,
+        values,
       );
 
       this.logger.log(`REND_D creado: ID ${newId} — rendición ${idRendicion} — usuario ${idUsuario}`);
@@ -275,17 +290,25 @@ export class RendDHanaRepository implements IRendDRepository {
       if (val !== undefined) { setParts.push(`"${col}" = ?`); params.push(val); }
     };
 
-    add('U_RD_Cuenta',       dto.cuenta);
-    add('U_RD_NombreCuenta', dto.nombreCuenta);
-    add('U_RD_Concepto',     dto.concepto);
+    // Preparar nombre de cuenta concatenado si hay cuenta
+    const nombreCuentaConcatenado = dto.cuenta && dto.nombreCuenta !== undefined
+      ? `${dto.cuenta}-${dto.nombreCuenta}` 
+      : dto.nombreCuenta;
+    
+    // Proveedor eventual (PL*) va vacío en U_RD_CodProv
+    const codProvLimpio = dto.codProv?.startsWith('PL') ? null : dto.codProv;
+
+    add('U_RD_Cuenta',       this._normalizeEmpty(dto.cuenta));
+    add('U_RD_NombreCuenta', this._normalizeEmpty(nombreCuentaConcatenado));
+    add('U_RD_Concepto',     this._normalizeEmpty(dto.concepto));
     add('U_RD_Fecha',        dto.fecha);
     add('U_RD_IdTipoDoc',    dto.idTipoDoc);
-    add('U_RD_TipoDoc',      dto.tipoDoc);
-    add('U_RD_IdDoc',        dto.idDoc);
-    add('U_RD_NumDocumento', dto.numDocumento);
-    add('U_RD_NroAutor',     dto.nroAutor);
-    add('U_RD_Ctrl',         dto.ctrl);
-    add('U_CUF',             dto.cuf);
+    add('U_RD_IdDoc',        dto.tipoDoc);
+    add('U_RD_TipoDoc',      this._normalizeEmpty(dto.tipoDocName));
+    add('U_RD_NumDocumento', this._normalizeEmpty(dto.numDocumento));
+    add('U_RD_NroAutor',     this._normalizeEmpty(dto.nroAutor));
+    add('U_RD_Ctrl',         this._normalizeEmpty(dto.ctrl));
+    add('U_CUF',             this._normalizeEmpty(dto.cuf));
     add('U_RD_Importe',      dto.importe);
     add('U_RD_Descuento',    dto.descuento);
     add('U_RD_TasaCero',     dto.tasaCero);
@@ -302,26 +325,26 @@ export class RendDHanaRepository implements IRendDRepository {
     add('U_MontoIUE',        dto.montoIUE);
     add('U_MontoRCIVA',      dto.montoRCIVA);
     add('U_ICE',             dto.ice);
-    add('U_CuentaIVA',       dto.cuentaIVA);
-    add('U_CuentaIT',        dto.cuentaIT);
-    add('U_CuentaIUE',       dto.cuentaIUE);
-    add('U_CuentaRCIVA',     dto.cuentaRCIVA);
-    add('U_CTAEXENTO',       dto.ctaExento);
-    add('U_RD_NIT',          dto.nit);
-    add('U_RD_CodProv',      dto.codProv);
-    add('U_RD_Prov',         dto.prov);
-    add('U_RD_N1',           dto.n1);
-    add('U_RD_N2',           dto.n2);
-    add('U_RD_N3',           dto.n3);
-    add('U_RD_N4',           dto.n4);
-    add('U_RD_N5',           dto.n5);
-    add('U_RD_Proyecto',     dto.proyecto);
-    add('U_RD_Partida',      dto.partida);
-    add('U_RD_NRO_OT',       dto.nroOT);
-    add('U_RD_AUXILIAR1',    dto.auxiliar1);
-    add('U_RD_AUXILIAR2',    dto.auxiliar2);
-    add('U_RD_AUXILIAR3',    dto.auxiliar3);
-    add('U_RD_AUXILIAR4',    dto.auxiliar4);
+    add('U_CuentaIVA',       this._normalizeEmpty(dto.cuentaIVA));
+    add('U_CuentaIT',        this._normalizeEmpty(dto.cuentaIT));
+    add('U_CuentaIUE',       this._normalizeEmpty(dto.cuentaIUE));
+    add('U_CuentaRCIVA',     this._normalizeEmpty(dto.cuentaRCIVA));
+    add('U_CTAEXENTO',       this._normalizeEmpty(dto.ctaExento));
+    add('U_RD_NIT',          this._normalizeEmpty(dto.nit));
+    add('U_RD_CodProv',      this._normalizeEmpty(codProvLimpio));
+    add('U_RD_Prov',         this._normalizeEmpty(dto.prov));
+    add('U_RD_N1',           this._normalizeEmpty(dto.n1));
+    add('U_RD_N2',           this._normalizeEmpty(dto.n2));
+    add('U_RD_N3',           this._normalizeEmpty(dto.n3));
+    add('U_RD_N4',           this._normalizeEmpty(dto.n4));
+    add('U_RD_N5',           this._normalizeEmpty(dto.n5));
+    add('U_RD_Proyecto',     this._normalizeEmpty(dto.proyecto));
+    add('U_RD_Partida',      this._normalizeEmpty(dto.partida));
+    add('U_RD_NRO_OT',       this._normalizeEmpty(dto.nroOT));
+    add('U_RD_AUXILIAR1',    this._normalizeEmpty(dto.auxiliar1));
+    add('U_RD_AUXILIAR2',    this._normalizeEmpty(dto.auxiliar2));
+    add('U_RD_AUXILIAR3',    this._normalizeEmpty(dto.auxiliar3));
+    add('U_RD_AUXILIAR4',    this._normalizeEmpty(dto.auxiliar4));
 
     if (!setParts.length) return { affected: 0 };
 

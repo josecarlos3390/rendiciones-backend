@@ -31,11 +31,21 @@ import jwtConfig       from './config/jwt.config';
 import appConfig       from './config/app.config';
 import sqlserverConfig from './config/sqlserver.config';
 import postgresConfig  from './config/postgres.config';
+import aiConfig        from './config/ai.config';
+import appModeConfig   from './config/app-mode.config';
 import { loggerConfig } from './config/logger.config';
 
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { IntegracionModule } from './modules/integracion/integracion.module';
 import { RendCmpModule } from './modules/rend-cmp/rend-cmp.module';
+import { ProyectosModule } from './modules/proyectos/proyectos.module';
+import { CoaModule } from './modules/coa/coa.module';
+import { DimensionesModule } from './modules/dimensiones/dimensiones.module';
+import { NormasModule } from './modules/normas/normas.module';
+import { AdjuntosModule } from './modules/adjuntos/adjuntos.module';
+import { AiModule } from './modules/ai/ai.module';
+import { HealthModule } from './modules/health/health.module';
+import { TipoCambioModule } from './modules/tipo-cambio/tipo-cambio.module';
 
 @Module({
   imports: [
@@ -45,7 +55,7 @@ import { RendCmpModule } from './modules/rend-cmp/rend-cmp.module';
     }]),
     ConfigModule.forRoot({
       isGlobal:    true,
-      load:        [hanaConfig, jwtConfig, appConfig, sqlserverConfig, postgresConfig],
+      load:        [hanaConfig, jwtConfig, appConfig, sqlserverConfig, postgresConfig, aiConfig, appModeConfig],
       envFilePath: '.env',
     }),
     WinstonModule.forRoot(loggerConfig),
@@ -69,6 +79,14 @@ import { RendCmpModule } from './modules/rend-cmp/rend-cmp.module';
     FacturaModule,
     IntegracionModule,
     RendCmpModule,
+    ProyectosModule,
+    CoaModule,
+    DimensionesModule,
+    NormasModule,
+    AdjuntosModule,
+    AiModule,
+    HealthModule,
+    TipoCambioModule,
   ],
   providers: [
     // JWT aplicado globalmente — usar @Public() para excluir rutas

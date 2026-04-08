@@ -1,4 +1,4 @@
-import { Injectable, Inject, NotFoundException, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, Logger } from '@nestjs/common';
 import { IPerfilesRepository } from './repositories/perfiles.repository.interface';
 import { CreatePerfilDto } from './dto/create-perfil.dto';
 import { UpdatePerfilDto } from './dto/update-perfil.dto';

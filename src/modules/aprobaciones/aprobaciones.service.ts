@@ -14,14 +14,25 @@ export class AprobacionesService {
     private readonly rendMSvc: RendMService,
   ) {}
 
-  /** GET /aprobaciones/pendientes — rendiciones que esperan MI aprobación */
+  /** GET /aprobaciones/pendientes — rendiciones que esperan MI aprobación (nivel 1) */
   async getPendientes(loginAprob: string) {
     return this.repo.findPendientesParaAprobador(loginAprob);
   }
 
-  /** GET /aprobaciones/count — badge contador del sidebar */
+  /** GET /aprobaciones/pendientes-nivel2 — rendiciones de nivel 2 aprobadas por nivel 1 */
+  async getPendientesNivel2(loginAprob: string) {
+    return this.repo.findPendientesNivel2(loginAprob);
+  }
+
+  /** GET /aprobaciones/count — badge contador del sidebar (nivel 1) */
   async countPendientes(loginAprob: string) {
     const count = await this.repo.countPendientes(loginAprob);
+    return { count };
+  }
+
+  /** GET /aprobaciones/count-nivel2 — badge contador de nivel 2 */
+  async countPendientesNivel2(loginAprob: string) {
+    const count = await this.repo.countPendientesNivel2(loginAprob);
     return { count };
   }
 
@@ -50,7 +61,7 @@ export class AprobacionesService {
 
     if (!cadena.length) {
       // Sin aprobadores → se aprueba automáticamente
-      await this.rendMSvc.updateEstado(idRendicion, 3); // 3=APROBADO
+      await this.rendMSvc.updateEstado(idRendicion, 7); // 7=APROBADO
       this.logger.log(`Rendición ${idRendicion} auto-aprobada (sin cadena de aprobación)`);
       return { message: 'Rendición aprobada automáticamente — no tiene aprobadores configurados', niveles: [] };
     }
@@ -96,7 +107,7 @@ export class AprobacionesService {
     // Verificar si todos aprobaron
     const todosAprobados = await this.repo.allApproved(idRendicion);
     if (todosAprobados) {
-      await this.rendMSvc.updateEstado(idRendicion, 3); // 3=APROBADO
+      await this.rendMSvc.updateEstado(idRendicion, 7); // 7=APROBADO
       this.logger.log(`Rendición ${idRendicion} — APROBADA COMPLETAMENTE`);
       return { message: 'Rendición aprobada completamente', estadoFinal: 'APROBADO' };
     }

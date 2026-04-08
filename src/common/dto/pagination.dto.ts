@@ -25,6 +25,10 @@ export class RendMQueryDto extends PaginationDto {
   @Type(() => Number)
   @IsInt()
   idPerfil?: number;
+
+  @ApiPropertyOptional({ description: 'Filtrar por estados (coma separados)', example: '1,4' })
+  @IsOptional()
+  estados?: string;   // se parsea en el controller a number[]
 }
 
 /**
