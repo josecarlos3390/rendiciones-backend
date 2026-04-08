@@ -209,7 +209,7 @@ export class RendDHanaRepository implements IRendDRepository {
         dto.fecha,
         dto.idTipoDoc ?? 1, 
         dto.tipoDoc ?? null, 
-        this._normalizeEmpty(dto.tipoDocName),
+        dto.tipoDoc ?? null,  // U_RD_TipoDoc debe guardar el ID, no el nombre
         this._normalizeEmpty(dto.partida), 
         dto.exento ?? null, 
         1, // U_RD_Estado
@@ -304,7 +304,7 @@ export class RendDHanaRepository implements IRendDRepository {
     add('U_RD_Fecha',        dto.fecha);
     add('U_RD_IdTipoDoc',    dto.idTipoDoc);
     add('U_RD_IdDoc',        dto.tipoDoc);
-    add('U_RD_TipoDoc',      this._normalizeEmpty(dto.tipoDocName));
+    add('U_RD_TipoDoc',      dto.tipoDoc);  // Guardar el ID numérico, no el nombre
     add('U_RD_NumDocumento', this._normalizeEmpty(dto.numDocumento));
     add('U_RD_NroAutor',     this._normalizeEmpty(dto.nroAutor));
     add('U_RD_Ctrl',         this._normalizeEmpty(dto.ctrl));

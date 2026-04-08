@@ -17,7 +17,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "verify": "npm run lint && npm run test && npm run build"
+    "verify": "npm run lint && npm run test && npm run build",
+    "seed:admin": "ts-node ../scripts/create-admin-user.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",

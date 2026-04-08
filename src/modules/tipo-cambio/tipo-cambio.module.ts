@@ -1,5 +1,7 @@
 import { Module, Provider } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SapModule } from '../sap/sap.module';
+import { TipoCambioController } from './tipo-cambio.controller';
 import { TipoCambioService } from './tipo-cambio.service';
 import { TIPO_CAMBIO_REPOSITORY } from './repositories/tipo-cambio.repository.interface';
 import { TipoCambioHanaRepository } from './repositories/tipo-cambio.hana.repository';
@@ -22,6 +24,8 @@ const tipoCambioRepositoryProvider: Provider = {
 };
 
 @Module({
+  imports: [SapModule],
+  controllers: [TipoCambioController],
   providers: [
     TipoCambioService,
     TipoCambioHanaRepository,

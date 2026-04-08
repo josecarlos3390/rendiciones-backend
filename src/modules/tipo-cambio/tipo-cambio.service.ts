@@ -68,7 +68,24 @@ export class TipoCambioService {
   // ── CRUD (solo para modo OFFLINE) ─────────────────────────────────────────
 
   async create(data: CreateTipoCambioDto): Promise<ITipoCambio> {
-    return this.repo.create(data);
+    try {
+      return await this.repo.create(data);
+    } catch (error: any) {
+      // Si ya existe, actualizar en lugar de crear
+      if (error.message?.includes('DUPLICATE')) {
+        this.logger.warn(`Tipo de cambio existente, actualizando: ${data.moneda} - ${data.fecha}`);
+        
+        // Buscar el registro existente para obtener su ID
+        const existente = await this.repo.findByFechaMonedaCompleto(data.fecha, data.moneda);
+        if (existente?.U_IdTipoCambio) {
+          return this.repo.update(existente.U_IdTipoCambio, {
+            tasa: data.tasa,
+            activo: 'Y',
+          });
+        }
+      }
+      throw error;
+    }
   }
 
   async update(id: number, data: UpdateTipoCambioDto): Promise<ITipoCambio> {

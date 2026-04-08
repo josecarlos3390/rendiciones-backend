@@ -857,6 +857,48 @@ export class SapService {
     return rules;
   }
 
+  // ── Tipo de Cambio (Exchange Rates) ────────────────────────────────────────
+
+  /**
+   * Obtiene el tipo de cambio de una moneda para una fecha específica desde SAP.
+   * Usa el servicio SBOBobService_GetCurrencyRate de SAP Service Layer.
+   * 
+   * POST /b1s/v1/SBOBobService_GetCurrencyRate
+   * Body: { "Currency": "USD", "Date": "20260101" }
+   * 
+   * @param fecha Fecha en formato YYYY-MM-DD
+   * @param moneda Código de moneda (ej: 'USD')
+   * @returns Tasa de cambio (rate) o null si no existe
+   */
+  async getTipoCambio(fecha: string, moneda: string = 'USD'): Promise<number | null> {
+    try {
+      // Formatear fecha para SAP: YYYY-MM-DD -> YYYYMMDD (formato interno de SAP)
+      const fechaSap = fecha.replace(/-/g, '');
+      
+      // Usar SBOBobService_GetCurrencyRate para obtener el tipo de cambio
+      const body = {
+        Currency: moneda.toUpperCase(),
+        Date: fechaSap,
+      };
+
+      const data = await this.slPost<{ Rate: number }>('SBOBobService_GetCurrencyRate', body);
+
+      if (!data || data.Rate === undefined || data.Rate === null) {
+        this.logger.warn(`No se encontró tipo de cambio para ${moneda} en fecha ${fecha}`);
+        return null;
+      }
+
+      // SAP devuelve la tasa: cuántos BOB = 1 unidad de moneda extranjera
+      // Ejemplo: Rate = 6.96 significa 1 USD = 6.96 BOB
+      this.logger.debug(`Tipo de cambio ${moneda} para ${fecha}: ${data.Rate}`);
+      return data.Rate;
+
+    } catch (error) {
+      this.logger.error(`Error al obtener tipo de cambio desde SAP: ${error.message}`);
+      return null;
+    }
+  }
+
   // ── GET con cookie de sesión ──────────────────────────────────────────────
 
   private async slGet<T>(endpoint: string): Promise<T> {
@@ -898,6 +940,53 @@ export class SapService {
 
       req.on('error', reject);
       req.setTimeout(15000, () => { req.destroy(); reject(new Error(`Timeout GET ${endpoint}`)); });
+      req.end();
+    });
+  }
+
+  // ── POST con cookie de sesión ──────────────────────────────────────────────
+
+  private async slPost<T>(endpoint: string, body: object): Promise<T> {
+    if (!this.slBaseUrl) throw new Error('SAP_SL_URL no configurado en .env');
+
+    const sessionCookie = await this.getSession();
+    const url           = `${this.slBaseUrl}/${endpoint}`;
+    const bodyJson      = JSON.stringify(body);
+
+    return new Promise<T>((resolve, reject) => {
+      const parsedUrl = new URL(url);
+      const options: https.RequestOptions = {
+        hostname:           parsedUrl.hostname,
+        port:               parseInt(parsedUrl.port) || 443,
+        path:               parsedUrl.pathname + parsedUrl.search,
+        method:             'POST',
+        rejectUnauthorized: false,
+        headers: {
+          'Content-Type':   'application/json',
+          'Content-Length': Buffer.byteLength(bodyJson),
+          'Cookie':         sessionCookie,
+        },
+      };
+
+      const req = https.request(options, (res) => {
+        let body = '';
+        res.on('data', c => body += c);
+        res.on('end', () => {
+          if (res.statusCode === 401 || res.statusCode === 403) {
+            this.session = null;
+            return reject(new Error(`Sesión expirada o sin permisos (${res.statusCode})`));
+          }
+          if (res.statusCode && res.statusCode >= 400) {
+            return reject(new Error(`SAP SL ${endpoint} → ${res.statusCode}: ${body}`));
+          }
+          try   { resolve(JSON.parse(body) as T); }
+          catch { reject(new Error(`Error parseando respuesta SAP SL: ${body.substring(0, 300)}`)); }
+        });
+      });
+
+      req.on('error', reject);
+      req.setTimeout(15000, () => { req.destroy(); reject(new Error(`Timeout POST ${endpoint}`)); });
+      req.write(bodyJson);
       req.end();
     });
   }
