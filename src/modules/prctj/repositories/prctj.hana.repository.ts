@@ -20,7 +20,7 @@ export class PrctjHanaRepository {
   ) {}
 
   /** Obtiene todas las líneas de distribución de una línea REND_D */
-  async findByLinea(idRendicion: number, idRD: number): Promise<RendPrctj[]> {
+  async findByLinea(idRendicion: number, idRD: number, idUsuario: number): Promise<RendPrctj[]> {
     return this.db.query<RendPrctj>(
       `SELECT
         "PRCT_RD_IDRD", "PRCT_RD_RM_IDREND", "PRCT_RD_IDUSER",
@@ -30,28 +30,28 @@ export class PrctjHanaRepository {
         "PRCT_RD_PROYECTO",
         "PRCT_RD_AUXILIAR1", "PRCT_RD_AUXILIAR2", "PRCT_RD_AUXILIAR3", "PRCT_RD_AUXILIAR4"
        FROM ${this.DB}
-       WHERE "PRCT_RD_RM_IDREND" = ? AND "PRCT_RD_IDRD" = ?
+       WHERE "PRCT_RD_RM_IDREND" = ? AND "PRCT_RD_IDRD" = ? AND "PRCT_RD_IDUSER" = ?
        ORDER BY "PRCT_IDLINEA" ASC`,
-      [idRendicion, idRD],
+      [idRendicion, idRD, idUsuario],
     );
   }
 
   /** Verifica si una línea REND_D ya tiene distribución */
-  async tieneDistribucion(idRendicion: number, idRD: number): Promise<boolean> {
+  async tieneDistribucion(idRendicion: number, idRD: number, idUsuario: number): Promise<boolean> {
     const rows = await this.db.query<any>(
       `SELECT COUNT(*) AS "cnt" FROM ${this.DB}
-       WHERE "PRCT_RD_RM_IDREND" = ? AND "PRCT_RD_IDRD" = ?`,
-      [idRendicion, idRD],
+       WHERE "PRCT_RD_RM_IDREND" = ? AND "PRCT_RD_IDRD" = ? AND "PRCT_RD_IDUSER" = ?`,
+      [idRendicion, idRD, idUsuario],
     );
     return (this.db.col(rows[0], 'cnt') ?? 0) > 0;
   }
 
   /** Elimina todas las distribuciones de una línea REND_D */
-  async deleteByLinea(idRendicion: number, idRD: number): Promise<void> {
+  async deleteByLinea(idRendicion: number, idRD: number, idUsuario: number): Promise<void> {
     await this.db.execute(
       `DELETE FROM ${this.DB}
-       WHERE "PRCT_RD_RM_IDREND" = ? AND "PRCT_RD_IDRD" = ?`,
-      [idRendicion, idRD],
+       WHERE "PRCT_RD_RM_IDREND" = ? AND "PRCT_RD_IDRD" = ? AND "PRCT_RD_IDUSER" = ?`,
+      [idRendicion, idRD, idUsuario],
     );
   }
 

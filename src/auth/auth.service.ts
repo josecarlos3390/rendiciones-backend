@@ -7,6 +7,7 @@ import { JwtPayload }    from './interfaces/jwt-payload.interface';
 import { tbl }           from '../database/db-table.helper';
 import { LoginAttemptsService } from './services/login-attempts.service';
 import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -31,6 +32,54 @@ export class AuthService {
     return superUser === 1 ? 'ADMIN' : 'USER';
   }
 
+  /**
+   * Detecta si un hash es MD5 (32 caracteres hex)
+   */
+  private isMD5Hash(hash: string): boolean {
+    return /^[a-f0-9]{32}$/i.test(hash);
+  }
+
+  /**
+   * Detecta si es base64
+   */
+  private isBase64(str: string): boolean {
+    return /^[A-Za-z0-9+/]*={0,2}$/.test(str) && str.length % 4 === 0 && str.length > 0;
+  }
+
+  /**
+   * Decodifica base64
+   */
+  private decodeBase64(str: string): string | null {
+    try {
+      return Buffer.from(str, 'base64').toString('utf8');
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Hashea con MD5 (para compatibilidad con migración)
+   */
+  private md5Hash(password: string): string {
+    return crypto.createHash('md5').update(password).digest('hex');
+  }
+
+  /**
+   * Migra un usuario a bcrypt
+   */
+  private async migratePassword(userId: number, plainPassword: string): Promise<void> {
+    try {
+      const hashedPassword = await bcrypt.hash(plainPassword, 10);
+      await this.db.execute(
+        `UPDATE ${this.DB} SET "U_Pass" = ? WHERE "U_IdU" = ?`,
+        [hashedPassword, userId],
+      );
+      this.logger.log(`Password migrado a bcrypt para usuario ID: ${userId}`);
+    } catch (error) {
+      this.logger.error(`Error migrando password para usuario ${userId}:`, error);
+    }
+  }
+
   async login(dto: LoginDto) {
     const { password } = dto;
     const username = dto.username.trim().toLowerCase();
@@ -53,7 +102,6 @@ export class AuthService {
 
     if (!user) {
       this.logger.warn(`Usuario no encontrado: ${username}`);
-      // Registrar intento fallido
       this.loginAttempts.recordFailedAttempt(username);
       await bcrypt.compare(password, this.DUMMY_HASH);
       throw new UnauthorizedException('Credenciales invalidas');
@@ -78,18 +126,45 @@ export class AuthService {
     const nr3        = col('U_NR3')        ?? '';
     const nomSup     = col('U_NomSup')     ?? '';
 
-    // ¿Es aprobador de algún usuario? → buscar si alguien lo tiene como U_NomSup
+    // ¿Es aprobador de algún usuario?
     const aprobRows  = await this.db.query<any>(
       `SELECT COUNT(*) AS "cnt" FROM ${this.DB} WHERE LOWER("U_NomSup") = ?`,
       [String(login).toLowerCase()],
     );
     const esAprobador = Number(this.db.col(aprobRows[0], 'cnt') ?? 0) > 0;
 
-    const isValid = await bcrypt.compare(password, pass ?? '');
-    this.logger.debug(`bcrypt.compare: ${isValid}`);
+    // Verificar contraseña (soporta base64, MD5 y bcrypt)
+    let isValid = false;
+    const storedHash = pass ?? '';
+
+    if (this.isBase64(storedHash)) {
+      // Es base64
+      const decoded = this.decodeBase64(storedHash);
+      isValid = decoded === password;
+      this.logger.debug(`Password en BASE64 detectado para usuario: ${username}, valid: ${isValid}`);
+      
+      if (isValid) {
+        await this.migratePassword(idU, password);
+      }
+    } 
+    else if (this.isMD5Hash(storedHash)) {
+      // Es MD5
+      const md5Password = this.md5Hash(password);
+      isValid = md5Password.toLowerCase() === storedHash.toLowerCase();
+      
+      this.logger.debug(`Password en MD5 detectado para usuario: ${username}, valid: ${isValid}`);
+      
+      if (isValid) {
+        await this.migratePassword(idU, password);
+      }
+    } 
+    else {
+      // Es bcrypt (o algún otro formato)
+      isValid = await bcrypt.compare(password, storedHash);
+      this.logger.debug(`bcrypt.compare: ${isValid}`);
+    }
 
     if (!isValid) {
-      // Registrar intento fallido
       this.loginAttempts.recordFailedAttempt(username);
       throw new UnauthorizedException('Credenciales invalidas');
     }
@@ -102,7 +177,7 @@ export class AuthService {
       throw new UnauthorizedException('Tu cuenta ha expirado. Contacta al administrador.');
     }
 
-    // Login exitoso - limpiar intentos fallidos
+    // Login exitoso
     this.loginAttempts.recordSuccessfulLogin(username);
     this.logger.log(`Login exitoso: ${username}`);
 
@@ -149,7 +224,6 @@ export class AuthService {
     const nr3        = col('U_NR3')        ?? '';
     const nomSup     = col('U_NomSup')     ?? '';
 
-    // ¿Es aprobador de algún usuario?
     const aprobRows2 = await this.db.query<any>(
       `SELECT COUNT(*) AS "cnt" FROM ${this.DB} WHERE LOWER("U_NomSup") = ?`,
       [String(login).toLowerCase()],
@@ -165,6 +239,9 @@ export class AuthService {
       fijarNr, nr1, nr2, nr3, nomSup, esAprobador,
     };
 
-    return { access_token: this.jwtService.sign(payload) };
+    return {
+      access_token: this.jwtService.sign(payload),
+      user: { id: idU, username: login, name: nomUser, role: payload.role, appRend, appConf, fijarSaldo },
+    };
   }
 }

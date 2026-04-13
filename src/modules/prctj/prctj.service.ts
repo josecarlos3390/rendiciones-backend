@@ -28,7 +28,8 @@ export class PrctjService {
   ) {
     // Reusar la misma validación de acceso que rend-d
     await this.rendDSvc.findByRendicion(idRendicion, role, idUsuario, loginUsername, esAprobador, sinAprobador);
-    return this.repo.findByLinea(idRendicion, idRD);
+    const idUsuarioNum = Number(idUsuario);
+    return this.repo.findByLinea(idRendicion, idRD, idUsuarioNum);
   }
 
   /**
@@ -107,11 +108,11 @@ export class PrctjService {
     const importe = (lineaRD as any).U_RD_Importe ?? 0;
 
     // Reemplazar
-    await this.repo.deleteByLinea(idRendicion, idRD);
+    await this.repo.deleteByLinea(idRendicion, idRD, idUsuarioNum);
     await this.repo.insertLineas(idRendicion, idRD, idUsuarioNum, importe, dto.lineas);
 
     this.logger.log(`PRCTJ guardado: Rend=${idRendicion} RD=${idRD} ${dto.lineas.length} líneas`);
-    return this.repo.findByLinea(idRendicion, idRD);
+    return this.repo.findByLinea(idRendicion, idRD, idUsuarioNum);
   }
 
   /** DELETE — elimina toda la distribución de una línea */
@@ -133,7 +134,8 @@ export class PrctjService {
       }
     }
 
-    await this.repo.deleteByLinea(idRendicion, idRD);
+    const idUsuarioNum = Number(idUsuario);
+    await this.repo.deleteByLinea(idRendicion, idRD, idUsuarioNum);
     return { deleted: true };
   }
 }

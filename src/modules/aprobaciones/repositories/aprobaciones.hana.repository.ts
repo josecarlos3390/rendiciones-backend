@@ -115,6 +115,8 @@ export class AprobacionesHanaRepository {
   /** Rendiciones pendientes para un aprobador — solo el siguiente nivel activo */
   async findPendientesParaAprobador(loginAprob: string): Promise<AprobacionConRendicion[]> {
     // 1) Aprobaciones formales desde REND_APROBACION
+    // NOTA: Se hace JOIN con REND_U para validar que el usuario de la rendición
+    // sea subordinado del aprobador (evita cruzar rendiciones con mismo ID numérico)
     const rowsFormales = await this.db.query<any>(
       `SELECT a."U_IdRendicion", a."U_Nivel", a."U_LoginAprob", a."U_NomAprob",
               a."U_Estado", a."U_FechaAprob", a."U_Comentario",
@@ -123,8 +125,10 @@ export class AprobacionesHanaRepository {
               m."U_Monto", m."U_Estado" AS "U_Estado_Rend", m."U_IdPerfil"
        FROM ${this.DB} a
        JOIN ${this.DB_M} m ON m."U_IdRendicion" = a."U_IdRendicion"
+       JOIN ${this.DB_U} u ON CAST(u."U_IdU" AS VARCHAR) = m."U_IdUsuario"
        WHERE LOWER(a."U_LoginAprob") = LOWER(?)
          AND a."U_Estado" = 'PENDIENTE'
+         AND LOWER(u."U_NomSup") = LOWER(?)
          AND (
            a."U_Nivel" = 1
            OR NOT EXISTS (
@@ -135,7 +139,7 @@ export class AprobacionesHanaRepository {
            )
          )
        ORDER BY m."U_FechaIni" DESC`,
-      [loginAprob],
+      [loginAprob, loginAprob],
     );
 
     const formales = rowsFormales.map(r => ({
@@ -206,8 +210,10 @@ export class AprobacionesHanaRepository {
               m."U_Monto", m."U_Estado" AS "U_Estado_Rend", m."U_IdPerfil"
        FROM ${this.DB} a
        JOIN ${this.DB_M} m ON m."U_IdRendicion" = a."U_IdRendicion"
+       JOIN ${this.DB_U} u ON CAST(u."U_IdU" AS VARCHAR) = m."U_IdUsuario"
        WHERE LOWER(a."U_LoginAprob") = LOWER(?)
          AND a."U_Estado" = 'PENDIENTE'
+         AND LOWER(u."U_NomSup") = LOWER(?)
          AND a."U_Nivel" > 1
          AND EXISTS (
            SELECT 1 FROM ${this.DB} prev
@@ -216,7 +222,7 @@ export class AprobacionesHanaRepository {
              AND prev."U_Estado" = 'APROBADO'
          )
        ORDER BY m."U_FechaIni" DESC`,
-      [loginAprob],
+      [loginAprob, loginAprob],
     );
     return rows.map(r => ({
       ...this.norm(r),
@@ -248,7 +254,10 @@ export class AprobacionesHanaRepository {
     const rowsFormales = await this.db.query<any>(
       `SELECT COUNT(*) AS "cnt"
        FROM ${this.DB} a
+       JOIN ${this.DB_M} m ON m."U_IdRendicion" = a."U_IdRendicion"
+       JOIN ${this.DB_U} u ON CAST(u."U_IdU" AS VARCHAR) = m."U_IdUsuario"
        WHERE LOWER(a."U_LoginAprob") = LOWER(?)
+         AND LOWER(u."U_NomSup") = LOWER(?)
          AND a."U_Estado" = 'PENDIENTE'
          AND (
            a."U_Nivel" = 1
@@ -259,7 +268,7 @@ export class AprobacionesHanaRepository {
                AND prev."U_Estado" != 'APROBADO'
            )
          )`,
-      [loginAprob],
+      [loginAprob, loginAprob],
     );
     const cntFormales = Number(this.db.col(rowsFormales[0], 'cnt')) || 0;
 
@@ -285,7 +294,10 @@ export class AprobacionesHanaRepository {
     const rows = await this.db.query<any>(
       `SELECT COUNT(*) AS "cnt"
        FROM ${this.DB} a
+       JOIN ${this.DB_M} m ON m."U_IdRendicion" = a."U_IdRendicion"
+       JOIN ${this.DB_U} u ON CAST(u."U_IdU" AS VARCHAR) = m."U_IdUsuario"
        WHERE LOWER(a."U_LoginAprob") = LOWER(?)
+         AND LOWER(u."U_NomSup") = LOWER(?)
          AND a."U_Estado" = 'PENDIENTE'
          AND a."U_Nivel" > 1
          AND EXISTS (
@@ -294,7 +306,7 @@ export class AprobacionesHanaRepository {
              AND prev."U_Nivel" = a."U_Nivel" - 1
              AND prev."U_Estado" = 'APROBADO'
          )`,
-      [loginAprob],
+      [loginAprob, loginAprob],
     );
     return Number(this.db.col(rows[0], 'cnt')) || 0;
   }

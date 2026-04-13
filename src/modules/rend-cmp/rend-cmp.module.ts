@@ -10,6 +10,6 @@ import { REND_CMP_REPOSITORY }   from './repositories/rend-cmp.repository.interf
     RendCmpService,
     { provide: REND_CMP_REPOSITORY, useClass: RendCmpHanaRepository },
   ],
-  exports: [RendCmpService],
+  exports: [RendCmpService, REND_CMP_REPOSITORY],
 })
 export class RendCmpModule {}

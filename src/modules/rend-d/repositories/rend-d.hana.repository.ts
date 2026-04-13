@@ -22,9 +22,9 @@ const SAFE_COLS = `
   d."U_RD_NIT", d."U_RD_CodProv", d."U_RD_Prov",
   d."U_MontoIVA", d."U_MontoIT", d."U_MontoIUE", d."U_MontoRCIVA",
   d."U_ImporteBs", d."U_EXENTOBS", d."U_DESCTOBS",
-  d."U_RD_Marcado", d."U_CTAEXENTO",
+  d."U_CTAEXENTO",
   d."U_RD_AUXILIAR1", d."U_RD_AUXILIAR2", d."U_RD_AUXILIAR3", d."U_RD_AUXILIAR4",
-  d."U_TASA", d."U_CUF", d."U_GIFTCARD", d."U_ICE", d."U_RD_NRO_OT",
+  d."U_TASA", d."U_CUF", d."U_GIFTCARD", d."U_ICE",
   -- Cuentas: valor propio si existe, sino fallback desde REND_CTA (join por U_RD_IdDoc)
   COALESCE(NULLIF(d."U_CuentaIVA",   ''), c."U_IVAcuenta")   AS "U_CuentaIVA",
   COALESCE(NULLIF(d."U_CuentaIT",    ''), c."U_ITcuenta")    AS "U_CuentaIT",
@@ -125,7 +125,7 @@ export class RendDHanaRepository implements IRendDRepository {
       U_ImporteBs:         this._numNull(row, 'U_ImporteBs'),
       U_EXENTOBS:          this._numNull(row, 'U_EXENTOBS'),
       U_DESCTOBS:          this._numNull(row, 'U_DESCTOBS'),
-      U_RD_Marcado:        this._num(row, 'U_RD_Marcado'),
+      U_RD_Marcado:        0, // Columna no existe en BD, default 0
       U_CTAEXENTO:         this._str(row, 'U_CTAEXENTO'),
       U_RD_AUXILIAR1:      this._str(row, 'U_RD_AUXILIAR1'),
       U_RD_AUXILIAR2:      this._str(row, 'U_RD_AUXILIAR2'),
@@ -135,7 +135,7 @@ export class RendDHanaRepository implements IRendDRepository {
       U_CUF:               this._str(row, 'U_CUF',            null as any) || null,
       U_GIFTCARD:          this._numNull(row, 'U_GIFTCARD'),
       U_ICE:               this._num(row, 'U_ICE'),
-      U_RD_NRO_OT:         this._str(row, 'U_RD_NRO_OT'),
+      U_RD_NRO_OT:         '', // Columna no existe en BD, default vacío
     };
   }
 
@@ -235,20 +235,18 @@ export class RendDHanaRepository implements IRendDRepository {
         dto.importeBs ?? dto.importe ?? 0, 
         dto.exentoBs ?? 0, 
         dto.desctoBs ?? 0,
-        // Marcado y CTA Exento
-        0, // U_RD_Marcado
+        // CTA Exento
         this._normalizeEmpty(dto.ctaExento),
         // Auxiliares
         this._normalizeEmpty(dto.auxiliar1), 
         this._normalizeEmpty(dto.auxiliar2), 
         this._normalizeEmpty(dto.auxiliar3), 
         this._normalizeEmpty(dto.auxiliar4),
-        // Tasa, CUF, GiftCard, ICE, NRO_OT
+        // Tasa, CUF, GiftCard, ICE
         dto.tasa ?? null, 
         this._normalizeEmpty(dto.cuf), 
         dto.giftCard ?? 0,
-        dto.ice ?? 0, 
-        this._normalizeEmpty(dto.nroOT),
+        dto.ice ?? 0,
       ];
 
       // Debug: verificar conteo
@@ -270,9 +268,9 @@ export class RendDHanaRepository implements IRendDRepository {
             "U_MontoIVA", "U_MontoIT", "U_MontoIUE", "U_MontoRCIVA",
             "U_CuentaIVA", "U_CuentaIT", "U_CuentaIUE", "U_CuentaRCIVA",
             "U_ImporteBs", "U_EXENTOBS", "U_DESCTOBS",
-            "U_RD_Marcado", "U_CTAEXENTO",
+            "U_CTAEXENTO",
             "U_RD_AUXILIAR1", "U_RD_AUXILIAR2", "U_RD_AUXILIAR3", "U_RD_AUXILIAR4",
-            "U_TASA", "U_CUF", "U_GIFTCARD", "U_ICE", "U_RD_NRO_OT"
+            "U_TASA", "U_CUF", "U_GIFTCARD", "U_ICE"
           ) VALUES (${values.map(() => '?').join(', ')})`,
         values,
       );
@@ -340,7 +338,7 @@ export class RendDHanaRepository implements IRendDRepository {
     add('U_RD_N5',           this._normalizeEmpty(dto.n5));
     add('U_RD_Proyecto',     this._normalizeEmpty(dto.proyecto));
     add('U_RD_Partida',      this._normalizeEmpty(dto.partida));
-    add('U_RD_NRO_OT',       this._normalizeEmpty(dto.nroOT));
+    // U_RD_NRO_OT no existe en BD aún
     add('U_RD_AUXILIAR1',    this._normalizeEmpty(dto.auxiliar1));
     add('U_RD_AUXILIAR2',    this._normalizeEmpty(dto.auxiliar2));
     add('U_RD_AUXILIAR3',    this._normalizeEmpty(dto.auxiliar3));

@@ -66,6 +66,8 @@ export class IntegracionController {
       String(req.user.sub),     // para comparar con U_IdUsuario de REND_M
       req.user.role,
       dto,
+      req.user.genDocPre === '1',  // puede generar preliminar
+      !req.user.nomSup?.trim(),    // sin aprobador
     );
   }
 }

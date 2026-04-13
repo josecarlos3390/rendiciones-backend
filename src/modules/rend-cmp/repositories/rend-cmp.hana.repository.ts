@@ -2,7 +2,7 @@ import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
 import { tbl } from '../../../database/db-table.helper';
-import { IRendCmpRepository, RendCmp } from './rend-cmp.repository.interface';
+import { IRendCmpRepository, RendCmp, SapFieldMapping } from './rend-cmp.repository.interface';
 import { getTableMutex } from '../../../common/utils/db-mutex';
 
 @Injectable()
@@ -89,5 +89,53 @@ export class RendCmpHanaRepository implements IRendCmpRepository {
       [id],
     );
     return { affected };
+  }
+
+  async getFieldMapping(): Promise<SapFieldMapping> {
+    const rows = await this.db.query<any>(
+      `SELECT "U_IdCampo", "U_Campo" FROM ${this.DB} ORDER BY "U_IdCampo" ASC`,
+    );
+
+    // Fallback: mapeo por defecto con los nombres más comunes
+    const mapping: SapFieldMapping = {
+      1:  'U_TIPODOC',   // Tipo de Documento
+      2:  'U_CODFORPI',  // Codi Formulario Poliza
+      3:  'U_FECHAFAC',  // Fecha Factura
+      4:  'U_NROTRAM',   // Numero Tramite
+      5:  'U_NUMPOL',    // Numero Poliza
+      6:  'U_NIT',       // NIT
+      7:  'U_CARDNAME',  // Razon Social (nombre común)
+      8:  'U_IMPORTE',   // Importe
+      9:  'U_CODALFA',   // Codi de Control
+      10: 'U_ICE',       // Ice
+      11: 'U_EXENTO',    // Exento
+      12: 'U_NumAuto',   // Numero de Autorizacion
+      13: 'U_BOLBSP',    // Boleto BSP
+      14: 'U_NumDoc',    // Numero de Factura
+      15: 'U_DESCTOBR',  // Descuento BR
+      16: 'U_TASACERO',  // Tasa Cero
+      17: 'U_TASAS',     // Tasa
+      18: 'U_B_cuf',     // Codigo unico factura
+      19: 'U_GIFTCARD',  // gift card
+      20: 'U_RCIVA',     // RCIVA
+      // Campos adicionales comunes
+      100: 'U_TASAS',    // Tasa (alternativo)
+      101: 'U_B_cuf',    // CUF (alternativo)
+      102: 'U_GIFTCARD', // Gift card (alternativo)
+    };
+
+    // Actualizar con los valores reales de la BD
+    for (const row of rows) {
+      const idCampo = Number(this.db.col(row, 'U_IdCampo'));
+      const campo = String(this.db.col(row, 'U_Campo') ?? '');
+      
+      if (!campo) continue;
+
+      // Asegurar que el campo tenga prefijo U_ si no lo tiene
+      const campoSap = campo.startsWith('U_') ? campo : `U_${campo}`;
+      mapping[idCampo] = campoSap;
+    }
+
+    return mapping;
   }
 }

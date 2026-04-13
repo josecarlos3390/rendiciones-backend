@@ -40,7 +40,7 @@ export interface RendD {
   U_ImporteBs:        number | null;
   U_EXENTOBS:         number | null;
   U_DESCTOBS:         number | null;
-  U_RD_Marcado:       number;
+  U_RD_Marcado?:      number;  // Opcional - columna no existe en BD aún
   U_CTAEXENTO:        string;
   U_RD_AUXILIAR1:     string;
   U_RD_AUXILIAR2:     string;
@@ -50,5 +50,5 @@ export interface RendD {
   U_CUF:              string | null;
   U_GIFTCARD:         number | null;
   U_ICE:              number;
-  U_RD_NRO_OT:        string;
+  U_RD_NRO_OT?:       string;  // Opcional - columna no existe en BD aún
 }

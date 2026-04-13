@@ -3,6 +3,7 @@ import {
   ConflictException, Logger, Inject,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
 import { IUsersRepository, USERS_REPOSITORY } from './repositories/users.repository.interface';
 import { CreateUserDto }  from './dto/create-user.dto';
 import { UpdateUserDto }  from './dto/update-user.dto';
@@ -21,6 +22,38 @@ export class UsersService {
     @Inject(USERS_REPOSITORY)
     private readonly repo: IUsersRepository,
   ) {}
+
+  /**
+   * Detecta si un hash es MD5 (32 caracteres hex)
+   */
+  private isMD5Hash(hash: string): boolean {
+    return /^[a-f0-9]{32}$/i.test(hash);
+  }
+
+  /**
+   * Detecta si es base64
+   */
+  private isBase64(str: string): boolean {
+    return /^[A-Za-z0-9+/]*={0,2}$/.test(str) && str.length % 4 === 0 && str.length > 0;
+  }
+
+  /**
+   * Decodifica base64
+   */
+  private decodeBase64(str: string): string | null {
+    try {
+      return Buffer.from(str, 'base64').toString('utf8');
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Hashea con MD5 (para compatibilidad con migración)
+   */
+  private md5Hash(password: string): string {
+    return crypto.createHash('md5').update(password).digest('hex');
+  }
 
   async findAll(): Promise<RendU[]> {
     return this.repo.findAll();
@@ -54,7 +87,6 @@ export class UsersService {
       return d.toISOString().split('T')[0];
     })();
 
-    // El repositorio es responsable de la generación del ID
     const nextId = await this.repo.getNextId();
 
     const user = await this.repo.create(dto, hashedPassword, nextId, expStr);
@@ -63,7 +95,7 @@ export class UsersService {
   }
 
   async updateUser(id: number, dto: UpdateUserDto): Promise<RendU> {
-    await this.findOne(id); // valida existencia
+    await this.findOne(id);
 
     let hashedPassword: string | undefined;
     if (dto.password) {
@@ -80,11 +112,34 @@ export class UsersService {
     const hash = await this.repo.getPasswordHash(userId);
     if (!hash) throw new NotFoundException('Usuario no encontrado');
 
-    const isValid = await bcrypt.compare(currentPassword, hash);
-    if (!isValid) throw new BadRequestException('Contraseña actual incorrecta');
+    // Verificar contraseña actual (soporta base64, MD5 y bcrypt)
+    let isValid = false;
+    
+    if (this.isBase64(hash)) {
+      // Es base64
+      const decoded = this.decodeBase64(hash);
+      isValid = decoded === currentPassword;
+      this.logger.debug(`Verificando password BASE64 para usuario ${userId}: ${isValid}`);
+    }
+    else if (this.isMD5Hash(hash)) {
+      // Es MD5
+      const md5Password = this.md5Hash(currentPassword);
+      isValid = md5Password.toLowerCase() === hash.toLowerCase();
+      this.logger.debug(`Verificando password MD5 para usuario ${userId}: ${isValid}`);
+    } else {
+      // Es bcrypt
+      isValid = await bcrypt.compare(currentPassword, hash);
+    }
+    
+    if (!isValid) {
+      throw new BadRequestException('Contraseña actual incorrecta');
+    }
 
+    // Siempre guardar la nueva contraseña en bcrypt
     const hashed = await bcrypt.hash(newPassword, 10);
     await this.repo.updatePassword(userId, hashed);
+    
+    this.logger.log(`Password actualizado para usuario ${userId} (migrado a bcrypt)`);
 
     return { message: 'Contraseña actualizada correctamente' };
   }

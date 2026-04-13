@@ -10,6 +10,7 @@ import { SapSlService }          from './sap-sl.service';
 import { SyncRendicionDto }      from './dto/sync-rendicion.dto';
 import { PrctjHanaRepository }   from '../prctj/repositories/prctj.hana.repository';
 import { RendPrctj }             from '../prctj/interfaces/prctj.interface';
+import { IRendCmpRepository, REND_CMP_REPOSITORY, SapFieldMapping } from '../rend-cmp/repositories/rend-cmp.repository.interface';
 
 @Injectable()
 export class IntegracionService {
@@ -27,6 +28,8 @@ export class IntegracionService {
     private readonly sapSl:    SapSlService,
     private readonly prctjRepo: PrctjHanaRepository,
     private readonly config:   ConfigService,
+    @Inject(REND_CMP_REPOSITORY)
+    private readonly rendCmpRepo: IRendCmpRepository,
   ) {}
 
   async getPendientes(
@@ -68,6 +71,8 @@ export class IntegracionService {
     idUsuarioSub: string,   // req.user.sub (como string) — para comparar con U_IdUsuario de REND_M
     role:         string,   // 'ADMIN' | 'USER'
     dto:          SyncRendicionDto,
+    genDocPre:    boolean,  // puede generar preliminar directamente
+    sinAprobador: boolean,  // no tiene aprobador configurado
   ) {
     // ── 1. Obtener cabecera ───────────────────────────────────────────────
     const rend = await this.rendMSvc.findOne(idRendicion);
@@ -83,16 +88,29 @@ export class IntegracionService {
     }
 
     // ── 3. Validar estado ─────────────────────────────────────────────────
-    if (![3, 6].includes(rend.U_Estado)) {
-      throw new BadRequestException(
-        'Solo se pueden sincronizar rendiciones en estado APROBADO (3) o ERROR_SYNC (6)',
-      );
+    // Estados permitidos:
+    // - 1 (ABIERTO): solo si tiene genDocPre y sinAprobador
+    // - 7 (APROBADO): cualquier usuario con acceso
+    // - 6 (ERROR_SYNC): cualquier usuario con acceso
+    const puedeSincronizarDirecto = genDocPre && sinAprobador;
+    const estadosPermitidos = puedeSincronizarDirecto ? [1, 7, 6] : [7, 6];
+    
+    if (!estadosPermitidos.includes(rend.U_Estado)) {
+      const mensaje = puedeSincronizarDirecto
+        ? 'Solo se pueden sincronizar rendiciones en estado ABIERTO, APROBADO o ERROR_SYNC'
+        : 'Solo se pueden sincronizar rendiciones en estado APROBADO (7) o ERROR_SYNC (6)';
+      throw new BadRequestException(mensaje);
     }
 
     // ── 4. Obtener detalle filtrando por idRendicion + idUsuario del propietario ─
     // Pasamos rend.U_IdUsuario (el sub del propietario) para que el repo filtre
     // correctamente, incluso cuando quien ejecuta es un ADMIN diferente.
     const detalles = await this.rendDSvc.findByRendicion(idRendicion, role, rend.U_IdUsuario);
+
+    this.logger.log(`Sincronización ${idRendicion}: ${detalles.length} detalles obtenidos`);
+    if (detalles.length > 0) {
+      this.logger.debug(`Primer detalle: U_RD_IdRD=${detalles[0].U_RD_IdRD}, U_RD_Cuenta=${detalles[0].U_RD_Cuenta}, U_RD_Importe=${detalles[0].U_RD_Importe}`);
+    }
 
     if (!detalles || detalles.length === 0) {
       throw new BadRequestException(
@@ -143,8 +161,9 @@ export class IntegracionService {
     // con un número de documento simulado y se marca como SINCRONIZADO.
     if (this.isOffline) {
       const distribucionesMap = new Map<number, RendPrctj[]>();
+      const idUsuarioNum = Number(rend.U_IdUsuario);
       for (const d of detalles) {
-        const dist = await this.prctjRepo.findByLinea(idRendicion, d.U_RD_IdRD);
+        const dist = await this.prctjRepo.findByLinea(idRendicion, d.U_RD_IdRD, idUsuarioNum);
         if (dist.length > 0) distribucionesMap.set(d.U_RD_IdRD, dist);
       }
 
@@ -184,8 +203,9 @@ export class IntegracionService {
 
       // ── 8. Cargar distribuciones PRCTJ para cada línea ────────────────
       const distribucionesMap = new Map<number, RendPrctj[]>();
+      const idUsuarioNum = Number(rend.U_IdUsuario);
       for (const d of detalles) {
-        const dist = await this.prctjRepo.findByLinea(idRendicion, d.U_RD_IdRD);
+        const dist = await this.prctjRepo.findByLinea(idRendicion, d.U_RD_IdRD, idUsuarioNum);
         if (dist.length > 0) {
           distribucionesMap.set(d.U_RD_IdRD, dist);
         }
@@ -204,8 +224,40 @@ export class IntegracionService {
         this.logger.log(`Tasa de cambio aplicada: ${tasaCambio}`);
       }
 
-      // ── 10. Construir payload del JournalVoucher ───────────────────────
-      const payload = this.sapSl.buildJournalPayload(rend, detalles, distribucionesMap, tasaCambio);
+      // ── 10. Obtener mapeo de campos UDF desde REND_CMP ─────────────────
+      let fieldMapping: SapFieldMapping;
+      try {
+        fieldMapping = await this.rendCmpRepo.getFieldMapping();
+        this.logger.debug(`Mapeo de campos SAP cargado: ${JSON.stringify(fieldMapping)}`);
+      } catch (err: any) {
+        this.logger.warn(`Error cargando mapeo de campos desde REND_CMP: ${err.message}. Usando valores por defecto.`);
+        // Valores por defecto si no se puede cargar (usando U_IdCampo como clave)
+        fieldMapping = {
+          1:  'U_TIPODOC',   // Tipo de Documento
+          2:  'U_CODFORPI',  // Codi Formulario Poliza
+          3:  'U_FECHAFAC',  // Fecha Factura
+          4:  'U_NROTRAM',   // Numero Tramite
+          5:  'U_NUMPOL',    // Numero Poliza
+          6:  'U_NIT',       // NIT
+          7:  'U_CARDNAME',  // Razon Social
+          8:  'U_IMPORTE',   // Importe
+          9:  'U_CODALFA',   // Codi de Control
+          10: 'U_ICE',       // Ice
+          11: 'U_EXENTO',    // Exento
+          12: 'U_NumAuto',   // Numero de Autorizacion
+          13: 'U_BOLBSP',    // Boleto BSP
+          14: 'U_NumDoc',    // Numero de Factura
+          15: 'U_DESCTOBR',  // Descuento BR
+          16: 'U_TASACERO',  // Tasa Cero
+          17: 'U_TASAS',     // Tasa
+          18: 'U_B_cuf',     // Codigo unico factura
+          19: 'U_GIFTCARD',  // gift card
+          20: 'U_RCIVA',     // RCIVA
+        };
+      }
+
+      // ── 11. Construir payload del JournalVoucher ───────────────────────
+      const payload = this.sapSl.buildJournalPayload(rend, detalles, distribucionesMap, tasaCambio, fieldMapping);
 
       // ── 10. Enviar a SAP Service Layer ────────────────────────────────
       const nroDocERP = await this.sapSl.crearAsientoPreliminar(session, payload);

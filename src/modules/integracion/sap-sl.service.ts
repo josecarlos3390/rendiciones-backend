@@ -3,46 +3,32 @@ import { ConfigService } from '@nestjs/config';
 import { RendM } from '../rend-m/interfaces/rend-m.interface';
 import { RendD } from '../rend-d/interfaces/rend-d.interface';
 import { RendPrctj } from '../prctj/interfaces/prctj.interface';
+import { SapFieldMapping } from '../rend-cmp/repositories/rend-cmp.repository.interface';
 
 interface SlSession {
   cookie:    string;
   sessionId: string;
 }
 
+/**
+ * Línea de asiento contable con campos UDF dinámicos.
+ * Los campos UDF se asignan dinámicamente según el mapeo de SapFieldMapping.
+ */
 interface JournalLine {
   AccountCode?:  string;
   ShortName?:    string;
   Credit:        number;
   Debit:         number;
-  U_CARDNAME:    string;
-  U_FECHAFAC:    string;
-  U_NUM_FACT:    number;
-  U_NUMORDEN:    number;
-  U_NUMPOL:      string;
-  U_EXENTO?:     number;
-  U_ICE:         number;
-  U_IMPORTE:     number;
-  U_TIPODOC:     number;
-  U_DESCTOBR:    number;
-  U_BOLBSP:      number;
-  U_CODFORPI:    string;
-  U_NROTRAM:     string;
-  U_TASACERO:    number;
-  U_ESTADOFC:    string;
-  U_NumDoc:      number;
-  U_NumAuto:     string;
-  U_NIT:         string;
-  U_IEHD:        number;
-  U_IPJ:         number;
-  U_TASAS:       number;
-  U_OP_EXENTO:   number;
-  U_B_cuf:       string;
-  ProfitCode?:    string;
-  OcrCode2?:      string;
-  OcrCode3?:      string;
-  OcrCode4?:      string;
-  OcrCode5?:      string;
-  ProjectCode?:   string;
+  LineMemo?:     string;  // Glosa de la línea
+  // Campos UDF dinámicos - se asignan en runtime según SapFieldMapping
+  [udfField: string]: string | number | undefined;
+  // Dimensiones SAP (Cost Accounting / Profit Center)
+  CostingCode?:  string;   // N1 - Centro de Costo
+  CostingCode2?: string;   // N2 - Dimensión 2
+  CostingCode3?: string;   // N3 - Dimensión 3
+  CostingCode4?: string;   // N4 - Dimensión 4
+  CostingCode5?: string;   // N5 - Dimensión 5
+  ProjectCode?:  string;   // Proyecto
 }
 
 @Injectable()
@@ -132,17 +118,23 @@ export class SapSlService {
    *
    * Nota: U_RD_Exento es informativo — va en el campo U_EXENTO de la línea
    * principal pero NO genera línea contable separada.
+   *
+   * @param fieldMapping - Mapeo de nombres de campos UDF según configuración en REND_CMP
    */
   buildJournalPayload(
     rend:              RendM,
     detalles:          RendD[],
     distribucionesMap: Map<number, RendPrctj[]> = new Map(),
     tasaCambio?:       number,  // Tasa BOB → USD (solo cuando BolivianosEs=SISTEMA)
+    fieldMapping?:     SapFieldMapping, // Mapeo dinámico de campos UDF
   ): object {
     const fechaCabecera = rend.U_FechaFinal?.substring(0, 10)
                        ?? new Date().toISOString().substring(0, 10);
     const memo          = `[R] ${rend.U_Objetivo} - N° ${rend.U_IdRendicion}`;
     const lines: JournalLine[] = [];
+
+    this.logger.debug(`buildJournalPayload - Rendición ${rend.U_IdRendicion}: ${detalles.length} detalles recibidos`);
+    this.logger.debug(`buildJournalPayload - Rendición ${rend.U_IdRendicion}: U_CuentaCabecera=${rend.U_Cuenta}, U_Empleado=${rend.U_Empleado}`);
 
     // Acumulador para la línea de contrapartida final
     let totalDebitoNeto = 0;
@@ -153,10 +145,33 @@ export class SapSlService {
       return Math.round((monto / tasaCambio) * 100) / 100;
     };
 
-    for (const d of detalles) {
-      if (!d.U_RD_Cuenta) continue;   // sin cuenta asignada → saltar
+    // Helper para construir campos UDF dinámicos usando U_IdCampo
+    const fm = fieldMapping;
+    const udf = (values: Record<number, string | number>): Record<string, string | number> => {
+      if (!fm) return {} as Record<string, string | number>;
+      const result: Record<string, string | number> = {};
+      for (const [idCampo, val] of Object.entries(values)) {
+        const fieldName = fm[Number(idCampo)];
+        if (fieldName) result[fieldName] = val as string | number;
+      }
+      return result;
+    };
 
-      const base = this.buildBaseFields(d, rend);
+    // Validar que todos los detalles tengan cuenta contable asignada
+    const detallesSinCuenta = detalles.filter(d => !d.U_RD_Cuenta);
+    if (detallesSinCuenta.length > 0) {
+      const ids = detallesSinCuenta.map(d => d.U_RD_IdRD).join(', ');
+      const mensaje = `No se puede sincronizar: ${detallesSinCuenta.length} detalle(s) sin cuenta contable asignada (ID: ${ids}). Por favor, asigne una cuenta contable a todos los documentos de la rendición.`;
+      this.logger.warn(mensaje);
+      throw new Error(mensaje);
+    }
+
+    let lineasProcesadas = 0;
+    for (const d of detalles) {
+      this.logger.debug(`Procesando detalle U_RD_IdRD=${d.U_RD_IdRD}, U_RD_Cuenta=${d.U_RD_Cuenta}, U_RD_Importe=${d.U_RD_Importe}`);
+      lineasProcesadas++;
+
+      const { base, primeraLinea } = this.buildBaseFields(d, rend, fieldMapping);
 
       const importe    = d.U_RD_Importe    ?? 0;
       const total      = d.U_RD_Total      ?? 0;
@@ -176,58 +191,95 @@ export class SapSlService {
       const distribuciones = distribucionesMap.get(d.U_RD_IdRD) ?? [];
       const tieneDistrib   = distribuciones.length > 0;
 
+      // Preparar base sin campos de primera línea (TIPODOC, CUF) para líneas adicionales
+      const baseSinPrimeraLinea = { ...base };
+      
+      // Glosa/Concepto para todas las líneas del documento
+      const glosa = d.U_RD_Concepto?.trim() || rend.U_Objetivo || '';
+
+      // Dimensiones del detalle - solo en la primera línea de cada documento
+      const dimensionesPrimeraLinea = {
+        ...(d.U_RD_N1 ? { CostingCode: d.U_RD_N1 } : {}),
+        ...(d.U_RD_N2 ? { CostingCode2: d.U_RD_N2 } : {}),
+        ...(d.U_RD_N3 ? { CostingCode3: d.U_RD_N3 } : {}),
+        ...(d.U_RD_N4 ? { CostingCode4: d.U_RD_N4 } : {}),
+        ...(d.U_RD_N5 ? { CostingCode5: d.U_RD_N5 } : {}),
+        ...(d.U_RD_Proyecto ? { ProjectCode: d.U_RD_Proyecto } : {}),
+      };
+
       // ── DÉBITO 1: cuenta(s) de gasto ────────────────────────────────────
-      // Sin distribución: una sola línea con la cuenta principal
-      // Con distribución: N líneas — una por cada porcentaje, con su cuenta y dimensiones
       if (!tieneDistrib) {
-        // Comportamiento original
         const debitoGasto = esGU ? bruto : (bruto - montoIVA);
         lines.push({
-          ...base,
+          ...base,                // Campos base (todas las líneas)
+          ...primeraLinea,        // Campos solo primera línea: TIPODOC, CUF
+          ...dimensionesPrimeraLinea, // Dimensiones N1-N5 y Proyecto
           AccountCode: d.U_RD_Cuenta,
-          Debit:       conv(debitoGasto),  // Convertido a moneda local si aplica
+          Debit:       conv(debitoGasto),
           Credit:      0,
-          U_IMPORTE:   bruto,              // Siempre en BOB
-          U_EXENTO:    exento,             // Siempre en BOB
+          LineMemo:    glosa,
+          ...udf({ 8: bruto, 11: exento }), // 8=Importe, 11=Exento
         });
         totalDebitoNeto += debitoGasto;
       } else {
-        // Con distribución: generar una línea de débito por cada tramo
-        // El importe base es U_RD_Importe (el gasto sin retenciones)
-        // En GU el porcentaje se aplica sobre el bruto; en GD sobre el importe
+        // Cuando hay distribución, cada línea debe llevar los campos de la factura
+        // como si fuera la primera línea del documento (CUF, dimensiones, etc.)
         const baseDistrib = esGU ? bruto : importe;
-
         for (const dist of distribuciones) {
           const montoTramo = Math.round(baseDistrib * dist.PRCT_PORCENTAJE / 100 * 100) / 100;
           const debitoTramo = esGU ? montoTramo : (montoTramo - (montoIVA * dist.PRCT_PORCENTAJE / 100));
 
+          // TODAS las líneas de distribución llevan TIPODOC, CUF y dimensiones
+          // para que SAP pueda rastrear cada línea como parte de la misma factura
+          const baseLineaDistrib = { ...base, ...primeraLinea };
+
+          // Dimensiones de la distribución (o del detalle original si no hay en distribución)
+          const dimsDistribucion = {
+            ...(dist.PRCT_RD_N1      ? { CostingCode:   dist.PRCT_RD_N1 }      : (d.U_RD_N1 ? { CostingCode: d.U_RD_N1 } : {})),
+            ...(dist.PRCT_RD_N2     ? { CostingCode2:  dist.PRCT_RD_N2 }     : (d.U_RD_N2 ? { CostingCode2: d.U_RD_N2 } : {})),
+            ...(dist.PRCT_RD_N3     ? { CostingCode3:  dist.PRCT_RD_N3 }     : (d.U_RD_N3 ? { CostingCode3: d.U_RD_N3 } : {})),
+            ...(dist.PRCT_RD_N4     ? { CostingCode4:  dist.PRCT_RD_N4 }     : (d.U_RD_N4 ? { CostingCode4: d.U_RD_N4 } : {})),
+            ...(dist.PRCT_RD_N5     ? { CostingCode5:  dist.PRCT_RD_N5 }     : (d.U_RD_N5 ? { CostingCode5: d.U_RD_N5 } : {})),
+            ...(dist.PRCT_RD_PROYECTO ? { ProjectCode:  dist.PRCT_RD_PROYECTO } : (d.U_RD_Proyecto ? { ProjectCode: d.U_RD_Proyecto } : {})),
+          };
+
           lines.push({
-            ...base,
+            ...baseLineaDistrib,   // Base + TIPODOC + CUF (todas las líneas)
             AccountCode: dist.PRCT_RD_CUENTA || d.U_RD_Cuenta,
-            Debit:       conv(debitoTramo),  // Convertido a moneda local si aplica
+            Debit:       conv(debitoTramo),
             Credit:      0,
-            U_IMPORTE:   montoTramo,         // Siempre en BOB
-            U_EXENTO:    Math.round(exento * dist.PRCT_PORCENTAJE / 100 * 100) / 100, // Siempre en BOB
-            ...(dist.PRCT_RD_N1      ? { CostingCode:   dist.PRCT_RD_N1 }      : {}),
-            ...(dist.PRCT_RD_N2     ? { CostingCode2:  dist.PRCT_RD_N2 }     : {}),
-            ...(dist.PRCT_RD_N3     ? { CostingCode3:  dist.PRCT_RD_N3 }     : {}),
-            ...(dist.PRCT_RD_N4     ? { CostingCode4:  dist.PRCT_RD_N4 }     : {}),
-            ...(dist.PRCT_RD_N5     ? { CostingCode5:  dist.PRCT_RD_N5 }     : {}),
-            ...(dist.PRCT_RD_PROYECTO ? { ProjectCode:  dist.PRCT_RD_PROYECTO } : {}),
+            LineMemo:    glosa,
+            ...dimsDistribucion,   // Dimensiones de distribución o del detalle
+            ...udf({ 8: montoTramo, 11: Math.round(exento * dist.PRCT_PORCENTAJE / 100 * 100) / 100 }), // 8=Importe, 11=Exento
           });
           totalDebitoNeto += debitoTramo;
         }
       }
 
-      // ── DÉBITO 2: crédito fiscal IVA (es DÉBITO, no crédito) ─────────
-      // El IVA de una factura de compra genera un crédito fiscal a favor
+      // Preparar base mínima para líneas de impuestos/retenciones
+      // Estas líneas NO llevan datos del documento (CUF, TIPODOC, NIT, Fecha, etc.)
+      const baseImpuestos: Record<string, string | number> = {
+        U_ESTADOFC: 'V',
+        U_IEHD: 0,
+        U_IPJ: 0,
+        U_OP_EXENTO: 0,
+      };
+      
+      // Agregar campos UDF de mapeo si existen
+      if (fieldMapping) {
+        // Solo campos de control del sistema, NO campos del documento
+        if (fieldMapping[8]) baseImpuestos[fieldMapping[8]] = 0; // Importe (se sobreescribe)
+      }
+
+      // ── DÉBITO 2: crédito fiscal IVA ───────────────────────────────────
       if (montoIVA > 0 && d.U_CuentaIVA) {
         lines.push({
-          ...base,
+          ...baseImpuestos, // Solo campos mínimos del sistema
           AccountCode: d.U_CuentaIVA,
-          Debit:       conv(montoIVA),  // Convertido a moneda local si aplica
+          Debit:       conv(montoIVA),
           Credit:      0,
-          U_IMPORTE:   montoIVA,        // Siempre en BOB
+          LineMemo:    glosa,
+          ...udf({ 8: montoIVA }), // 8=Importe
         });
         totalDebitoNeto += montoIVA;
       }
@@ -235,11 +287,12 @@ export class SapSlService {
       // ── CRÉDITO 1: retención IT ───────────────────────────────────────
       if (montoIT > 0 && d.U_CuentaIT) {
         lines.push({
-          ...base,
+          ...baseImpuestos, // Solo campos mínimos del sistema
           AccountCode: d.U_CuentaIT,
           Debit:       0,
-          Credit:      conv(montoIT),  // Convertido a moneda local si aplica
-          U_IMPORTE:   montoIT,        // Siempre en BOB
+          Credit:      conv(montoIT),
+          LineMemo:    glosa,
+          ...udf({ 8: montoIT }), // 8=Importe
         });
         totalDebitoNeto -= montoIT;
       }
@@ -247,11 +300,12 @@ export class SapSlService {
       // ── CRÉDITO 2: retención RCIVA ────────────────────────────────────
       if (montoRCIVA > 0 && d.U_CuentaRCIVA) {
         lines.push({
-          ...base,
+          ...baseImpuestos, // Solo campos mínimos del sistema
           AccountCode: d.U_CuentaRCIVA,
           Debit:       0,
-          Credit:      conv(montoRCIVA),  // Convertido a moneda local si aplica
-          U_IMPORTE:   montoRCIVA,        // Siempre en BOB
+          Credit:      conv(montoRCIVA),
+          LineMemo:    glosa,
+          ...udf({ 8: montoRCIVA }), // 8=Importe
         });
         totalDebitoNeto -= montoRCIVA;
       }
@@ -259,59 +313,92 @@ export class SapSlService {
       // ── CRÉDITO 3: retención IUE ──────────────────────────────────────
       if (montoIUE > 0 && d.U_CuentaIUE) {
         lines.push({
-          ...base,
+          ...baseImpuestos, // Solo campos mínimos del sistema
           AccountCode: d.U_CuentaIUE,
           Debit:       0,
-          Credit:      conv(montoIUE),  // Convertido a moneda local si aplica
-          U_IMPORTE:   montoIUE,        // Siempre en BOB
+          Credit:      conv(montoIUE),
+          LineMemo:    glosa,
+          ...udf({ 8: montoIUE }), // 8=Importe
         });
         totalDebitoNeto -= montoIUE;
       }
 
-      // Nota: U_RD_Exento es un campo INFORMATIVO que va en U_EXENTO de la línea
-      // principal — NO genera una línea contable separada. Ya está incluido en
-      // U_RD_Importe (el importe bruto del documento ya contempla el exento).
+      // Nota: U_RD_Exento es INFORMATIVO — va en el campo EXENTO de la línea principal
     }
 
     // ── LÍNEA FINAL: contrapartida en cuenta cabecera ─────────────────────
     // Cuenta ASOCIADA a empleado → ShortName = U_Empleado (código empleado SAP)
     //   AccountCode debe OMITIRSE — SAP rechaza AccountCode vacío junto a ShortName
     // Cuenta NO ASOCIADA → AccountCode = U_Cuenta (código contable directo)
+    // Construir campos UDF para línea final usando U_IdCampo
+    const lineaFinalUdf: Record<string, string | number> = {};
+    
+    if (fieldMapping) {
+      if (fieldMapping[7]) lineaFinalUdf[fieldMapping[7]] = rend.U_NombreEmpleado?.trim() || rend.U_NomUsuario || ''; // 7=Razon Social
+      if (fieldMapping[3]) lineaFinalUdf[fieldMapping[3]] = fechaCabecera; // 3=Fecha Factura
+      if (fieldMapping[14]) lineaFinalUdf[fieldMapping[14]] = 0; // 14=Numero de Factura
+      if (fieldMapping[12]) lineaFinalUdf[fieldMapping[12]] = '0'; // 12=Numero de Autorizacion
+      if (fieldMapping[5]) lineaFinalUdf[fieldMapping[5]] = '0'; // 5=Numero Poliza
+      if (fieldMapping[11]) lineaFinalUdf[fieldMapping[11]] = 0; // 11=Exento
+      if (fieldMapping[10]) lineaFinalUdf[fieldMapping[10]] = 0; // 10=ICE
+      if (fieldMapping[8]) lineaFinalUdf[fieldMapping[8]] = Math.abs(totalDebitoNeto); // 8=Importe
+      if (fieldMapping[1]) lineaFinalUdf[fieldMapping[1]] = 10; // 1=Tipo de Documento (10=SIN ASIGNAR)
+      if (fieldMapping[15]) lineaFinalUdf[fieldMapping[15]] = 0; // 15=Descuento BR
+      if (fieldMapping[13]) lineaFinalUdf[fieldMapping[13]] = 0; // 13=Boleto BSP
+      if (fieldMapping[2]) lineaFinalUdf[fieldMapping[2]] = '0'; // 2=Codi Formulario Poliza
+      if (fieldMapping[4]) lineaFinalUdf[fieldMapping[4]] = '0'; // 4=Numero Tramite
+      if (fieldMapping[16]) lineaFinalUdf[fieldMapping[16]] = 0; // 16=Tasa Cero
+      if (fieldMapping[6]) lineaFinalUdf[fieldMapping[6]] = ''; // 6=NIT
+      if (fieldMapping[18]) lineaFinalUdf[fieldMapping[18]] = '0'; // 18=B_cuf
+      // Campos adicionales
+      lineaFinalUdf['U_ESTADOFC'] = 'V';
+      lineaFinalUdf['U_IEHD'] = 0;
+      lineaFinalUdf['U_IPJ'] = 0;
+      lineaFinalUdf['U_OP_EXENTO'] = 0;
+    } else {
+      // Fallback si no hay mapeo
+      Object.assign(lineaFinalUdf, {
+        U_CARDNAME:  rend.U_NombreEmpleado?.trim() || rend.U_NomUsuario || '',
+        U_FECHAFAC:  fechaCabecera,
+        U_NUM_FACT:  0,
+        U_NUMORDEN:  0,
+        U_NUMPOL:    '0',
+        U_EXENTO:    0,
+        U_ICE:       0,
+        U_IMPORTE:   Math.abs(totalDebitoNeto),
+        U_TIPODOC:   10,
+        U_DESCTOBR:  0,
+        U_BOLBSP:    0,
+        U_CODFORPI:  '0',
+        U_NROTRAM:   '0',
+        U_TASACERO:  0,
+        U_ESTADOFC:  'V',
+        U_NumDoc:    0,
+        U_NumAuto:   '0',
+        U_NIT:       '',
+        U_IEHD:      0,
+        U_IPJ:       0,
+        U_TASAS:     0,
+        U_OP_EXENTO: 0,
+        U_B_cuf:     '0',
+      });
+    }
+
     const lineaFinalBase = {
-      Debit:        0,
-      Credit:       conv(Math.abs(totalDebitoNeto)),  // Convertido a moneda local si aplica
-      U_CARDNAME:   rend.U_NombreEmpleado?.trim() || rend.U_NomUsuario || '',
-      U_FECHAFAC:   fechaCabecera,
-      U_NUM_FACT:   0,
-      U_NUMORDEN:   0,
-      U_NUMPOL:     '0',
-      U_EXENTO:     0,
-      U_ICE:        0,
-      U_IMPORTE:    Math.abs(totalDebitoNeto),  // Siempre en BOB
-      U_TIPODOC:    10,
-      U_DESCTOBR:   0,
-      U_BOLBSP:     0,
-      U_CODFORPI:   '0',
-      U_NROTRAM:    '0',
-      U_TASACERO:   0,
-      U_ESTADOFC:   'V',
-      U_NumDoc:     0,
-      U_NumAuto:    '0',
-      U_NIT:        '',
-      U_IEHD:       0,
-      U_IPJ:        0,
-      U_TASAS:      0,
-      U_OP_EXENTO:  0,
-      U_B_cuf:      '0',
+      Debit:    0,
+      Credit:   conv(Math.abs(totalDebitoNeto)),
+      LineMemo: `[R] ${rend.U_Objetivo}`,
+      ...lineaFinalUdf,
     };
 
     const lineaFinal: any = rend.U_Empleado?.trim()
-      // Cuenta asociada: solo ShortName, sin AccountCode
       ? { ...lineaFinalBase, ShortName: rend.U_Empleado.trim() }
-      // Cuenta no asociada: solo AccountCode, sin ShortName
       : { ...lineaFinalBase, AccountCode: rend.U_Cuenta };
 
     lines.push(lineaFinal);
+
+    this.logger.debug(`buildJournalPayload - Líneas generadas: ${lines.length} (detalles procesados: ${lineasProcesadas}, totalDebitoNeto: ${totalDebitoNeto})`);
+    this.logger.debug(`buildJournalPayload - Primera línea: ${JSON.stringify(lines[0])}`);
 
     return {
       JournalVoucher: {
@@ -344,9 +431,22 @@ export class SapSlService {
       throw new InternalServerErrorException(`SAP SL JournalVouchersService_Add (${res.status}): ${msg}`);
     }
 
-    const absEntry = body?.AbsEntry ?? body?.value ?? body?.JournalVoucher?.AbsEntry;
-    const nroDoc   = absEntry ? String(absEntry) : 'OK';
+    // Extraer número de documento de varias posibles ubicaciones en la respuesta de SAP
+    const absEntry = body?.AbsEntry 
+                  ?? body?.value 
+                  ?? body?.JournalVoucher?.AbsEntry
+                  ?? body?.JournalEntry?.AbsEntry
+                  ?? body?.AbsoluteEntry
+                  ?? body?.JdtNum
+                  ?? body?.TransId
+                  ?? body?.DocEntry;
+    
+    const nroDoc = absEntry ? String(absEntry) : 'OK';
+    
+    // Log detallado para debugging
     this.logger.log(`SAP SL Asiento creado — AbsEntry: ${nroDoc}`);
+    this.logger.debug(`SAP SL Respuesta completa: ${JSON.stringify(body)}`);
+    
     return nroDoc;
   }
 
@@ -355,29 +455,32 @@ export class SapSlService {
   private buildBaseFields(
     d:    RendD,
     rend: RendM,
-  ): Omit<JournalLine, 'AccountCode' | 'ShortName' | 'Debit' | 'Credit' | 'U_IMPORTE'> {
+    fieldMapping?: SapFieldMapping,
+  ): {
+    base: Omit<JournalLine, 'AccountCode' | 'ShortName' | 'Debit' | 'Credit'>;
+    primeraLinea: Record<string, string | number>;
+  } {
+
+    const fm = fieldMapping;
 
     // Fecha del documento individual; si no existe usar la fecha final de la rendición
     const fecha = d.U_RD_Fecha?.substring(0, 10)
                ?? rend.U_FechaFinal?.substring(0, 10)
                ?? new Date().toISOString().substring(0, 10);
 
-    // U_CARDNAME: nombre del proveedor si existe, sino nombre del empleado o usuario
+    // RSocial: nombre del proveedor si existe, sino nombre del empleado o usuario
     const cardName = d.U_RD_Prov?.trim()
                   || rend.U_NombreEmpleado?.trim()
                   || rend.U_NomUsuario
                   || '';
 
-    // U_NUM_FACT y U_NumDoc: número de factura/documento (U_RD_NumDocumento)
+    // NUM_FACT y NumDoc: número de factura/documento (U_RD_NumDocumento)
     const numDoc = Number(d.U_RD_NumDocumento ?? 0) || 0;
 
-    // U_BOLBSP: número de boleto/recibo
+    // BOLBSP: número de boleto/recibo
     const bolBsp = numDoc;
 
-    // U_NumAuto: SAP B1 tiene validaciones cruzadas según U_TIPODOC:
-    //   - TIPODOC 4 (Recibo de Alquiler) → debe ser '2' (código fijo SAP)
-    //   - TIPODOC 1 (Compra/Factura)     → número de autorización real, o '0' si no tiene
-    //   - Resto (recibos, sin asignar...) → '0' (SAP rechaza 'N/A' o vacío)
+    // NumAuto: SAP B1 tiene validaciones cruzadas según TIPODOC:
     const tipoDoc = d.U_RD_IdTipoDoc > 0 ? d.U_RD_IdTipoDoc : 10;
     let numAuto: string;
     if (tipoDoc === 4) {
@@ -388,36 +491,97 @@ export class SapSlService {
       numAuto = '0';
     }
 
-    // U_B_cuf: CUF de la factura electrónica (solo facturas, '0' para recibos)
+    // B_cuf: CUF de la factura electrónica
     const cuf = d.U_CUF?.trim() || '0';
 
-    // U_NIT: NIT del proveedor/cliente
+    // NIT: NIT del proveedor/cliente
     const nit = d.U_RD_NIT?.trim() || '';
 
+    // Separar campos: base (todas las líneas) vs primeraLinea (solo primera línea del documento)
+    const base: Record<string, string | number> = {};
+    const primeraLinea: Record<string, string | number> = {};
+    
+    if (fm) {
+      // === Campos que van en TODAS las líneas del documento ===
+      // Campo 7: Razon Social / CARDNAME
+      if (fm[7]) base[fm[7]] = cardName;
+      // Campo 3: Fecha Factura
+      if (fm[3]) base[fm[3]] = fecha;
+      // Campo 14: Numero de Factura (también usado para NUM_FACT)
+      if (fm[14]) base[fm[14]] = numDoc;
+      // Campo 12: Numero de Autorizacion
+      if (fm[12]) base[fm[12]] = numAuto;
+      // Campo 13: Boleto BSP
+      if (fm[13]) base[fm[13]] = bolBsp;
+      // Campo 6: NIT
+      if (fm[6]) base[fm[6]] = nit;
+      // Campo 10: ICE
+      if (fm[10]) base[fm[10]] = d.U_ICE ?? 0;
+      // Campo 11: Exento
+      if (fm[11]) base[fm[11]] = 0;
+      // Campo 8: Importe (se sobreescribe en cada línea)
+      if (fm[8]) base[fm[8]] = 0;
+      // Campo 15: Descuento BR
+      if (fm[15]) base[fm[15]] = d.U_RD_Descuento ?? 0;
+      // Campo 16: Tasa Cero
+      if (fm[16]) base[fm[16]] = d.U_RD_TasaCero ?? 0;
+      // Campo 2: Codi Formulario Poliza
+      if (fm[2]) base[fm[2]] = '0';
+      // Campo 4: Numero Tramite
+      if (fm[4]) base[fm[4]] = '0';
+      // Campo 5: Numero Poliza
+      if (fm[5]) base[fm[5]] = '0';
+      // Campo 9: Codi de Control
+      if (fm[9]) base[fm[9]] = '0';
+      // Campo 17: Tasa
+      if (fm[17]) base[fm[17]] = 0;
+      // Campo 19: Gift card
+      if (fm[19]) base[fm[19]] = '0';
+      // Campo 20: RCIVA
+      if (fm[20]) base[fm[20]] = 0;
+      // Campos adicionales comunes
+      base['U_ESTADOFC'] = 'V';
+      base['U_IEHD'] = 0;
+      base['U_IPJ'] = 0;
+      base['U_OP_EXENTO'] = 0;
+
+      // === Campos que solo van en la PRIMERA línea del documento ===
+      // Campo 1: Tipo de Documento
+      if (fm[1]) primeraLinea[fm[1]] = tipoDoc;
+      // Campo 18: Codigo unico factura (B_cuf)
+      if (fm[18]) primeraLinea[fm[18]] = cuf;
+      
+      return { base: base as any, primeraLinea };
+    }
+
+    // Fallback: campos por defecto (usando nombres más comunes)
     return {
-      U_CARDNAME:  cardName,
-      U_FECHAFAC:  fecha,
-      U_NUM_FACT:  numDoc,
-      U_NUMORDEN:  0,
-      U_NUMPOL:    '0',
-      U_EXENTO:    0,        // default 0 — la línea principal lo sobreescribe con el valor real
-      U_ICE:       d.U_ICE         ?? 0,
-      // U_TIPODOC: SAP acepta valores 1-10. 0 no es válido → usar 10 (SIN ASIGNAR)
-      U_TIPODOC:   tipoDoc,
-      U_DESCTOBR:  d.U_RD_Descuento ?? 0,
-      U_BOLBSP:    bolBsp,
-      U_CODFORPI:  '0',
-      U_NROTRAM:   '0',
-      U_TASACERO:  d.U_RD_TasaCero  ?? 0,
-      U_ESTADOFC:  'V',
-      U_NumDoc:    numDoc,
-      U_NumAuto:   numAuto,
-      U_NIT:       nit,
-      U_IEHD:      0,
-      U_IPJ:       0,
-      U_TASAS:     0,
-      U_OP_EXENTO: 0,
-      U_B_cuf:     cuf,
+      base: {
+        U_CARDNAME:  cardName,
+        U_FECHAFAC:  fecha,
+        U_NUM_FACT:  numDoc,
+        U_NUMORDEN:  0,
+        U_NUMPOL:    '0',
+        U_EXENTO:    0,
+        U_ICE:       d.U_ICE ?? 0,
+        U_DESCTOBR:  d.U_RD_Descuento ?? 0,
+        U_BOLBSP:    bolBsp,
+        U_CODFORPI:  '0',
+        U_NROTRAM:   '0',
+        U_TASACERO:  d.U_RD_TasaCero ?? 0,
+        U_ESTADOFC:  'V',
+        U_NumDoc:    numDoc,
+        U_NumAuto:   numAuto,
+        U_NIT:       nit,
+        U_IEHD:      0,
+        U_IPJ:       0,
+        U_TASAS:     0,
+        U_OP_EXENTO: 0,
+      } as any,
+      primeraLinea: {
+        U_TIPODOC:   tipoDoc,
+        U_B_cuf:     cuf,
+      },
     };
   }
 

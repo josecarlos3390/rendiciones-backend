@@ -1,3 +1,9 @@
+OJO CON LOS CAMPOS DE LA TABLA DE RENDICIONES, PUEDE GENERAR ERROR, eliminar las columnas
+"U_RD_Marcado" (columna y valor 0)
+"U_RD_NRO_OT" (columna y valor dto.nroOT)
+
+-- GUIA PARA INSTALAR RENDICIONES EN BASE HANA NUEVA
+
 -- CREAR EN LA TABLA DE HANA STUDIO UNA SEQUENCE
 
 CREATE SEQUENCE "REND_RETAIL_QA2"."REND_D_SEQ"
@@ -5,7 +11,6 @@ CREATE SEQUENCE "REND_RETAIL_QA2"."REND_D_SEQ"
   INCREMENT BY 1
   NO CYCLE;
 
-  -------------------------------------------------------------
 -- 1. Ver el MAX actual
 SELECT MAX("U_RD_IdRD") FROM "REND_RETAIL_QA2"."REND_D";
 
@@ -19,7 +24,7 @@ ALTER SEQUENCE "REND_RETAIL_QA2"."REND_D_SEQ" RESTART WITH XXXX;
 -- TABLA PARA AUTORIZACIONES---
 
 -- ══ Para HANA ejecutar: ══════════════════════════════════════════
- CREATE TABLE "REND_RETAIL_QA2"."REND_APROBACION" (
+ CREATE TABLE "REND_APROBACION" (
    "U_IdRendicion"  INTEGER       NOT NULL,
    "U_Nivel"        INTEGER       NOT NULL,
    "U_LoginAprob"   NVARCHAR(10)  NOT NULL,
@@ -29,52 +34,6 @@ ALTER SEQUENCE "REND_RETAIL_QA2"."REND_D_SEQ" RESTART WITH XXXX;
    "U_Comentario"   NVARCHAR(500) NULL,
    PRIMARY KEY ("U_IdRendicion", "U_Nivel")
  );
-
-
- ------ CONSIDERAR----------
- -- Si el 2 actual es CERRADO y quieres moverlo a 4:
-UPDATE rend_retail."REND_M" SET "U_Estado" = 4 WHERE "U_Estado" = 2;
-
-
-FLUJO APROBACIONES
---------------------
-Los datos existentes en la BD no se tocan. El único estado nuevo es el 3=APROBADO que se asigna 
-cuando todos los niveles aprueban. El flujo completo: 1→4→3→2 (Abierto → Enviado → Aprobado → Cerrado/Sincronizado).
-------------------
-MEJORANDO TIPO DOCUMENTO SAP
-------------------------------
-U_IdTipo     INTEGER PK   -- código SAP (1, 4, 10...)
-U_Nombre     VARCHAR(100) -- "Factura de Compra", "Recibo de Alquiler"
-U_EsTipoF    CHAR(1)      -- 'F'=Factura, 'R'=Recibo (determina lógica _recalcular)
-U_PermiteGU  CHAR(1)      -- 'Y'/'N' permite Grossing Up
-U_PermiteGD  CHAR(1)      -- 'Y'/'N' permite Grossing Down
-U_Orden      INTEGER      -- orden en el selector
-U_Activo     CHAR(1)      -- 'Y'/'N'
-
--------------------------------------------------------
-CONSULTA SQL
-------------------------------
--- ══ REND_TIPO_DOC_SAP — Tipos de documento SAP administrables ══
--- Ejecutar en PostgreSQL:
-CREATE TABLE IF NOT EXISTS rend_retail."REND_TIPO_DOC_SAP" (
-  "U_IdTipo"    INTEGER       NOT NULL,
-  "U_Nombre"    VARCHAR(100)  NOT NULL,
-  "U_EsTipoF"   CHAR(1)       NOT NULL DEFAULT 'F', -- 'F'=Factura 'R'=Recibo
-  "U_PermiteGU" CHAR(1)       NOT NULL DEFAULT 'N', -- Grossing Up
-  "U_PermiteGD" CHAR(1)       NOT NULL DEFAULT 'N', -- Grossing Down
-  "U_Orden"     INTEGER       NOT NULL DEFAULT 0,
-  "U_Activo"    CHAR(1)       NOT NULL DEFAULT 'Y',
-  PRIMARY KEY ("U_IdTipo")
-);
-
--- Datos iniciales (reemplazan los valores quemados en código)
-INSERT INTO rend_retail."REND_TIPO_DOC_SAP"
-  ("U_IdTipo","U_Nombre","U_EsTipoF","U_PermiteGU","U_PermiteGD","U_Orden","U_Activo")
-VALUES
-  (1,  'Factura de Compra',          'F', 'N', 'N', 1, 'Y'),
-  (4,  'Recibo de Alquiler',         'R', 'Y', 'Y', 2, 'Y'),
-  (10, 'Recibo sin especificación',  'R', 'Y', 'Y', 3, 'Y')
-ON CONFLICT ("U_IdTipo") DO NOTHING;
 
 -- ══ Para HANA:
  CREATE TABLE "SCHEMA"."REND_TIPO_DOC_SAP" (
@@ -100,3 +59,121 @@ ON CONFLICT ("U_IdTipo") DO NOTHING;
   "U_Intento"       INTEGER        NOT NULL DEFAULT 1,
   PRIMARY KEY ("U_IdSync")
 );
+
+-- Crear tabla REND_ADJUNTOS
+CREATE COLUMN TABLE "REND_ADJUNTOS" (
+    "ADJ_ID"            INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    "ADJ_ID_RENDICION"  INTEGER NOT NULL,
+    "ADJ_ID_RD"         INTEGER NOT NULL,
+    "ADJ_ID_USUARIO"    NVARCHAR(50) NOT NULL,
+    "ADJ_NOMBRE"        NVARCHAR(255) NOT NULL,
+    "ADJ_NOMBRE_SYS"    NVARCHAR(255) NOT NULL,
+    "ADJ_RUTA"          NVARCHAR(500) NOT NULL,
+    "ADJ_TIPO"          NVARCHAR(100),
+    "ADJ_TAMANO"        BIGINT,
+    "ADJ_DESCRIPCION"   NVARCHAR(500),
+    "ADJ_FECHA"         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Comentarios en la tabla
+COMMENT ON TABLE "REND_ADJUNTOS" IS 'Archivos adjuntos a líneas de detalle de rendiciones';
+COMMENT ON COLUMN "REND_ADJUNTOS"."ADJ_ID" IS 'ID único del adjunto';
+COMMENT ON COLUMN "REND_ADJUNTOS"."ADJ_ID_RENDICION" IS 'ID de la rendición (FK a REND_M)';
+COMMENT ON COLUMN "REND_ADJUNTOS"."ADJ_ID_RD" IS 'ID de la línea de detalle (FK a REND_D)';
+COMMENT ON COLUMN "REND_ADJUNTOS"."ADJ_ID_USUARIO" IS 'Usuario que subió el archivo';
+COMMENT ON COLUMN "REND_ADJUNTOS"."ADJ_NOMBRE" IS 'Nombre original del archivo';
+COMMENT ON COLUMN "REND_ADJUNTOS"."ADJ_NOMBRE_SYS" IS 'Nombre del archivo en el servidor (UUID)';
+COMMENT ON COLUMN "REND_ADJUNTOS"."ADJ_RUTA" IS 'Ruta relativa del archivo';
+COMMENT ON COLUMN "REND_ADJUNTOS"."ADJ_TIPO" IS 'MIME type del archivo';
+COMMENT ON COLUMN "REND_ADJUNTOS"."ADJ_TAMANO" IS 'Tamaño en bytes';
+COMMENT ON COLUMN "REND_ADJUNTOS"."ADJ_DESCRIPCION" IS 'Descripción opcional';
+COMMENT ON COLUMN "REND_ADJUNTOS"."ADJ_FECHA" IS 'Fecha de creación';
+
+-- Índices para búsqueda rápida
+CREATE INDEX "idx_adjuntos_rendicion" 
+    ON "REND_ADJUNTOS" ("ADJ_ID_RENDICION", "ADJ_ID_RD");
+
+CREATE INDEX "idx_adjuntos_usuario" 
+    ON "REND_ADJUNTOS" ("ADJ_ID_USUARIO");
+
+CREATE INDEX "idx_adjuntos_fecha" 
+    ON "REND_ADJUNTOS" ("ADJ_FECHA");
+
+
+-- MIGRAR UN USUARIO ADMIN---
+-- La contraseña es 123456
+-- Actualizar contraseña de ADMIN1 de base64 a bcrypt
+UPDATE "REND_U" 
+SET "U_Pass" = '$2a$10$5GLfhhL9vwR9ae9CPMKlCONd5zr1dEuCIEBSi254oBNiLTFu0PGba'
+WHERE "U_Login" = 'ADMIN1';
+
+
+-- Tambien si en el servidor de publicacion del frontend se va usar un ALIAS--
+-- el archivo environment.ts debe estar asi:
+
+const backendHost =
+  typeof window !== 'undefined' && window.location.hostname !== ''
+    ? window.location.hostname
+    : 'localhost'; // Fallback to localhost for SSR/security
+
+export const environment = {
+  //production: false,
+  production: true,
+  // Proxy Angular redirige /api/v1 → http://localhost:3000/api/v1
+  // Evita Mixed Content (HTTPS frontend → HTTP backend)
+  //apiUrl: `/api/v1`,
+  apiUrl: '/ESCR/api/v1',
+  // Request timeout in milliseconds
+  requestTimeout: 30000, // 30 seconds
+};
+
+y se debe ejecutar el build asi:
+
+ng build --configuration production --base-href /ESCR/ --deploy-url /ESCR/
+
+
+-- TAMBIEN EN EL BACKEND
+-- en el archivo .env hay que modificar el FRONTEND_URL
+
+-- TAMBIEN EN EL FRONTEND
+-- en el archivo web.config hay que actualizar si usamos un ALIAS
+
+-- NO NOS OLVIDMOS DEL SCRIPT, que automatiza todo
+.\scripts\deploy\windows\build-and-deploy.ps1 -Environment production
+
+
+
+
+
+
+
+
+
+
+
+
+---------------------------------------------------------------------------------------
+CONSULTA SQL POSTGRES, AUNQUE NO ES NECESARIO POSTGRES YA TIENE LA ESTRUCTURA COMPLETA
+---------------------------------------------------------------------------------------
+-- ══ REND_TIPO_DOC_SAP — Tipos de documento SAP administrables ══
+-- Ejecutar en PostgreSQL:
+CREATE TABLE IF NOT EXISTS rend_retail."REND_TIPO_DOC_SAP" (
+  "U_IdTipo"    INTEGER       NOT NULL,
+  "U_Nombre"    VARCHAR(100)  NOT NULL,
+  "U_EsTipoF"   CHAR(1)       NOT NULL DEFAULT 'F', -- 'F'=Factura 'R'=Recibo
+  "U_PermiteGU" CHAR(1)       NOT NULL DEFAULT 'N', -- Grossing Up
+  "U_PermiteGD" CHAR(1)       NOT NULL DEFAULT 'N', -- Grossing Down
+  "U_Orden"     INTEGER       NOT NULL DEFAULT 0,
+  "U_Activo"    CHAR(1)       NOT NULL DEFAULT 'Y',
+  PRIMARY KEY ("U_IdTipo")
+);
+
+-- Datos iniciales (reemplazan los valores quemados en código)
+INSERT INTO rend_retail."REND_TIPO_DOC_SAP"
+  ("U_IdTipo","U_Nombre","U_EsTipoF","U_PermiteGU","U_PermiteGD","U_Orden","U_Activo")
+VALUES
+  (1,  'Factura de Compra',          'F', 'N', 'N', 1, 'Y'),
+  (4,  'Recibo de Alquiler',         'R', 'Y', 'Y', 2, 'Y'),
+  (10, 'Recibo sin especificación',  'R', 'Y', 'Y', 3, 'Y')
+ON CONFLICT ("U_IdTipo") DO NOTHING;
+

@@ -7,9 +7,10 @@ import { SapSlService }               from './sap-sl.service';
 import { RendMModule }                from '../rend-m/rend-m.module';
 import { RendDModule }                from '../rend-d/rend-d.module';
 import { PrctjModule }                from '../prctj/prctj.module';
+import { RendCmpModule }              from '../rend-cmp/rend-cmp.module';
 
 @Module({
-  imports:     [RendMModule, RendDModule, PrctjModule],
+  imports:     [RendMModule, RendDModule, PrctjModule, RendCmpModule],
   controllers: [IntegracionController],
   providers: [
     IntegracionService,
