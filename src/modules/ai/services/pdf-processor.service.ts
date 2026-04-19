@@ -1,6 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { fromBuffer } from 'pdf2pic';
-import * as sharp from 'sharp';
+import { Injectable, Logger } from "@nestjs/common";
+import { fromBuffer } from "pdf2pic";
+import * as sharp from "sharp";
 
 @Injectable()
 export class PdfProcessorService {
@@ -11,17 +11,19 @@ export class PdfProcessorService {
    */
   async extractText(buffer: Buffer): Promise<string> {
     try {
-      const { PDFParse } = await import('pdf-parse');
-      
+      const { PDFParse } = await import("pdf-parse");
+
       // pdf-parse v2 API: constructor acepta { data: buffer }
       // getText() llama a load() internamente
       const parser = new PDFParse({ data: buffer });
       const result = await parser.getText();
-      
-      return result.text || '';
-    } catch (error: any) {
-      this.logger.error(`Error extrayendo texto de PDF: ${error.message}`);
-      throw new Error('No se pudo extraer texto del PDF');
+
+      return result.text || "";
+    } catch (error: unknown) {
+      this.logger.error(
+        `Error extrayendo texto de PDF: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new Error("No se pudo extraer texto del PDF");
     }
   }
 
@@ -31,31 +33,33 @@ export class PdfProcessorService {
    */
   async convertToImage(buffer: Buffer): Promise<string> {
     try {
-      this.logger.log('Convirtiendo PDF a imagen...');
+      this.logger.log("Convirtiendo PDF a imagen...");
 
       const convert = fromBuffer(buffer, {
         density: 150, // DPI
-        format: 'png',
+        format: "png",
         width: 1200,
         height: 1600,
         quality: 90,
         preserveAspectRatio: true,
-        saveFilename: 'page',
-        savePath: './temp',
+        saveFilename: "page",
+        savePath: "./temp",
       });
 
       // Convertir primera página
-      const result = await convert(1) as any;
+      const result = (await convert(1)) as { buffer?: Buffer };
 
       if (!result?.buffer) {
-        throw new Error('No se pudo convertir el PDF a imagen');
+        throw new Error("No se pudo convertir el PDF a imagen");
       }
 
-      this.logger.log('PDF convertido a imagen exitosamente');
-      return result.buffer.toString('base64');
-    } catch (error: any) {
-      this.logger.error(`Error convirtiendo PDF: ${error.message}`);
-      throw new Error('Error al convertir PDF a imagen');
+      this.logger.log("PDF convertido a imagen exitosamente");
+      return result.buffer.toString("base64");
+    } catch (error: unknown) {
+      this.logger.error(
+        `Error convirtiendo PDF: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new Error("Error al convertir PDF a imagen");
     }
   }
 
@@ -64,7 +68,7 @@ export class PdfProcessorService {
    */
   async optimizeImage(base64Image: string): Promise<string> {
     try {
-      const buffer = Buffer.from(base64Image, 'base64');
+      const buffer = Buffer.from(base64Image, "base64");
 
       // Comprimir imagen
       const optimized = await sharp(buffer)
@@ -72,9 +76,11 @@ export class PdfProcessorService {
         .png({ quality: 80, compressionLevel: 9 })
         .toBuffer();
 
-      return optimized.toString('base64');
-    } catch (error: any) {
-      this.logger.warn(`Error optimizando imagen: ${error.message}`);
+      return optimized.toString("base64");
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Error optimizando imagen: ${error instanceof Error ? error.message : String(error)}`,
+      );
       // Retornar original si falla
       return base64Image;
     }
@@ -102,25 +108,27 @@ export class PdfProcessorService {
     size: number;
   }> {
     try {
-      const { PDFParse } = await import('pdf-parse');
-      
+      const { PDFParse } = await import("pdf-parse");
+
       const parser = new PDFParse({ data: buffer });
-      
+
       // getInfo() también carga el documento internamente
       const info = await parser.getInfo();
       const numPages = info?.total || 1;
-      
+
       // Intentar obtener texto para ver si tiene texto seleccionable
       const textResult = await parser.getText();
-      const hasText = (textResult.text || '').trim().length > 50;
+      const hasText = (textResult.text || "").trim().length > 50;
 
       return {
         pageCount: numPages,
         hasText,
         size: buffer.length,
       };
-    } catch (error: any) {
-      this.logger.error(`Error obteniendo info de PDF: ${error.message}`);
+    } catch (error: unknown) {
+      this.logger.error(
+        `Error obteniendo info de PDF: ${error instanceof Error ? error.message : String(error)}`,
+      );
       throw error;
     }
   }

@@ -1,14 +1,14 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
-import { AiConfigService } from './ai-config.service';
-import { ClaudeService } from './claude.service';
+import { Injectable, Logger } from "@nestjs/common";
+import { HttpService } from "@nestjs/axios";
+import { firstValueFrom } from "rxjs";
+import { AiConfigService } from "./ai-config.service";
+import { ClaudeService } from "./claude.service";
 import {
   ValidacionSiatResponse,
   DatosSiat,
   Discrepancia,
   SiatConsultaResult,
-} from '../interfaces/validacion-siat.interface';
+} from "../interfaces/validacion-siat.interface";
 
 /**
  * Servicio para validar facturas contra el SIAT
@@ -48,13 +48,13 @@ export class ValidadorSiatService {
       if (!resultadoSiat.success || !resultadoSiat.data) {
         return {
           valido: false,
-          estadoSIAT: 'NO_ENCONTRADA',
-          datosSIAT: null as any,
+          estadoSIAT: "NO_ENCONTRADA",
+          datosSIAT: null,
           datosPDF: datosPdf || {},
           discrepancias: [],
           recomendacion:
-            'La factura no fue encontrada en el SIAT. Verifique el CUF o el número de factura.',
-          riesgo: 'alto',
+            "La factura no fue encontrada en el SIAT. Verifique el CUF o el número de factura.",
+          riesgo: "alto",
           timestamp: new Date().toISOString(),
         };
       }
@@ -69,8 +69,8 @@ export class ValidadorSiatService {
           datosSIAT,
           datosPDF: {},
           discrepancias: [],
-          recomendacion: 'Factura verificada en SIAT.',
-          riesgo: 'bajo',
+          recomendacion: "Factura verificada en SIAT.",
+          riesgo: "bajo",
           timestamp: new Date().toISOString(),
         };
       }
@@ -79,8 +79,8 @@ export class ValidadorSiatService {
       const discrepancias = this.compararDatos(datosPdf, datosSIAT);
 
       // 4. Si hay discrepancias y IA está habilitada, analizar con Claude
-      let recomendacion = 'Factura verificada correctamente.';
-      let riesgo: 'bajo' | 'medio' | 'alto' = 'bajo';
+      let recomendacion = "Factura verificada correctamente.";
+      let riesgo: "bajo" | "medio" | "alto" = "bajo";
 
       if (discrepancias.length > 0 && this.aiConfig.enabled) {
         const analisis = await this.analizarDiscrepanciasConIA(
@@ -106,8 +106,10 @@ export class ValidadorSiatService {
         riesgo,
         timestamp: new Date().toISOString(),
       };
-    } catch (error: any) {
-      this.logger.error(`Error validando factura: ${error.message}`);
+    } catch (error: unknown) {
+      this.logger.error(
+        `Error validando factura: ${error instanceof Error ? error.message : String(error)}`,
+      );
       throw error;
     }
   }
@@ -131,45 +133,47 @@ export class ValidadorSiatService {
 
       // Parsear respuesta del SIAT
       // La estructura real dependerá de la API del SIAT
-      const data = response.data as any;
+      const data = response.data as Record<string, unknown>;
 
       return {
         success: true,
         data: {
-          nit: data.nit || '',
-          numero: data.numeroFactura || '',
-          cuf: data.cuf || cuf,
-          fecha: data.fecha || '',
-          monto: parseFloat(data.montoTotal) || 0,
-          estado: data.estado || 'VIGENTE',
-          razonSocial: data.razonSocialEmisor || '',
-          codigoControl: data.codigoControl || '',
+          nit: String(data.nit || ""),
+          numero: String(data.numeroFactura || ""),
+          cuf: String(data.cuf || cuf),
+          fecha: String(data.fecha || ""),
+          monto: parseFloat(String(data.montoTotal || "0")) || 0,
+          estado: String(data.estado || "VIGENTE"),
+          razonSocial: String(data.razonSocialEmisor || ""),
+          codigoControl: String(data.codigoControl || ""),
         },
       };
-    } catch (error: any) {
-      this.logger.warn(`Error consultando SIAT: ${error.message}`);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Error consultando SIAT: ${error instanceof Error ? error.message : String(error)}`,
+      );
 
       // Por ahora, simulamos datos para desarrollo
       // En producción, esto debería manejar el error real
-      if (process.env.NODE_ENV === 'development') {
+      if (process.env.NODE_ENV === "development") {
         return {
           success: true,
           data: {
-            nit: '123456789',
-            numero: '001-001-0001234',
+            nit: "123456789",
+            numero: "001-001-0001234",
             cuf: cuf,
-            fecha: '2026-04-05',
+            fecha: "2026-04-05",
             monto: 1150.5,
-            estado: 'VIGENTE',
-            razonSocial: 'EMPRESA DEMO SRL',
-            codigoControl: 'AB-12-CD-34',
+            estado: "VIGENTE",
+            razonSocial: "EMPRESA DEMO SRL",
+            codigoControl: "AB-12-CD-34",
           },
         };
       }
 
       return {
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -191,30 +195,30 @@ export class ValidadorSiatService {
     // Comparar NIT
     if (datosPdf.nit && datosPdf.nit !== datosSiat.nit) {
       discrepancias.push({
-        campo: 'nit',
+        campo: "nit",
         pdf: datosPdf.nit,
         siat: datosSiat.nit,
-        explicacion: '', // Se llena con IA o reglas simples
+        explicacion: "", // Se llena con IA o reglas simples
       });
     }
 
     // Comparar número de factura
     if (datosPdf.numeroFactura && datosPdf.numeroFactura !== datosSiat.numero) {
       discrepancias.push({
-        campo: 'numero',
+        campo: "numero",
         pdf: datosPdf.numeroFactura,
         siat: datosSiat.numero,
-        explicacion: '',
+        explicacion: "",
       });
     }
 
     // Comparar fecha
     if (datosPdf.fecha && datosPdf.fecha !== datosSiat.fecha) {
       discrepancias.push({
-        campo: 'fecha',
+        campo: "fecha",
         pdf: datosPdf.fecha,
         siat: datosSiat.fecha,
-        explicacion: '',
+        explicacion: "",
       });
     }
 
@@ -225,10 +229,10 @@ export class ValidadorSiatService {
 
       if (porcentajeDiferencia > 1) {
         discrepancias.push({
-          campo: 'monto',
+          campo: "monto",
           pdf: datosPdf.monto,
           siat: datosSiat.monto,
-          explicacion: '',
+          explicacion: "",
         });
       }
     }
@@ -241,20 +245,31 @@ export class ValidadorSiatService {
    */
   private async analizarDiscrepanciasConIA(
     discrepancias: Discrepancia[],
-    datosPdf: any,
+    datosPdf: {
+      nit?: string;
+      numeroFactura?: string;
+      fecha?: string;
+      monto?: number;
+    },
     datosSiat: DatosSiat,
-  ): Promise<{ recomendacion: string; riesgo: 'bajo' | 'medio' | 'alto' }> {
+  ): Promise<{ recomendacion: string; riesgo: "bajo" | "medio" | "alto" }> {
     try {
       // Preparar prompt para Claude
-      const prompt = this.buildAnalisisPrompt(discrepancias, datosPdf, datosSiat);
+      const prompt = this.buildAnalisisPrompt(
+        discrepancias,
+        datosPdf,
+        datosSiat,
+      );
 
       // Llamar a Claude
       const respuesta = await this.claudeService.analizarDiscrepancias(prompt);
 
       // Parsear respuesta
       return this.parsearAnalisisIA(respuesta);
-    } catch (error: any) {
-      this.logger.warn(`Error analizando con IA: ${error.message}`);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Error analizando con IA: ${error instanceof Error ? error.message : String(error)}`,
+      );
       // Fallback a reglas simples
       return {
         recomendacion: this.generarRecomendacionSimple(discrepancias),
@@ -268,16 +283,21 @@ export class ValidadorSiatService {
    */
   private buildAnalisisPrompt(
     discrepancias: Discrepancia[],
-    datosPdf: any,
+    datosPdf: {
+      nit?: string;
+      numeroFactura?: string;
+      fecha?: string;
+      monto?: number;
+    },
     datosSiat: DatosSiat,
   ): string {
     return `Analiza las siguientes discrepancias entre una factura PDF y los datos oficiales del SIAT:
 
 DATOS DEL PDF:
-- NIT: ${datosPdf.nit || 'No proporcionado'}
-- Número: ${datosPdf.numeroFactura || 'No proporcionado'}
-- Fecha: ${datosPdf.fecha || 'No proporcionada'}
-- Monto: ${datosPdf.monto || 'No proporcionado'}
+- NIT: ${datosPdf.nit || "No proporcionado"}
+- Número: ${datosPdf.numeroFactura || "No proporcionado"}
+- Fecha: ${datosPdf.fecha || "No proporcionada"}
+- Monto: ${datosPdf.monto || "No proporcionado"}
 
 DATOS DEL SIAT:
 - NIT: ${datosSiat.nit}
@@ -287,7 +307,7 @@ DATOS DEL SIAT:
 - Estado: ${datosSiat.estado}
 
 DISCREPANCIAS ENCONTRADAS:
-${discrepancias.map((d) => `- ${d.campo}: PDF=${d.pdf}, SIAT=${d.siat}`).join('\n')}
+${discrepancias.map((d) => `- ${d.campo}: PDF=${d.pdf}, SIAT=${d.siat}`).join("\n")}
 
 Responde con un JSON:
 {
@@ -304,22 +324,26 @@ Responde con un JSON:
    */
   private parsearAnalisisIA(respuesta: string): {
     recomendacion: string;
-    riesgo: 'bajo' | 'medio' | 'alto';
+    riesgo: "bajo" | "medio" | "alto";
   } {
     try {
-      const cleanJson = respuesta.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const cleanJson = respuesta
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
       const parsed = JSON.parse(cleanJson);
 
       return {
-        recomendacion: parsed.recomendacion || 'Verificar discrepancias encontradas.',
-        riesgo: ['bajo', 'medio', 'alto'].includes(parsed.riesgo)
+        recomendacion:
+          parsed.recomendacion || "Verificar discrepancias encontradas.",
+        riesgo: ["bajo", "medio", "alto"].includes(parsed.riesgo)
           ? parsed.riesgo
-          : 'medio',
+          : "medio",
       };
     } catch {
       return {
-        recomendacion: 'Verificar discrepancias encontradas.',
-        riesgo: 'medio',
+        recomendacion: "Verificar discrepancias encontradas.",
+        riesgo: "medio",
       };
     }
   }
@@ -328,21 +352,23 @@ Responde con un JSON:
    * Genera recomendación simple sin IA
    */
   private generarRecomendacionSimple(discrepancias: Discrepancia[]): string {
-    const campos = discrepancias.map((d) => d.campo).join(', ');
+    const campos = discrepancias.map((d) => d.campo).join(", ");
     return `Se encontraron diferencias en: ${campos}. Verifique los datos ingresados.`;
   }
 
   /**
    * Calcula nivel de riesgo basado en discrepancias
    */
-  private calcularRiesgo(discrepancias: Discrepancia[]): 'bajo' | 'medio' | 'alto' {
-    const camposCriticos = ['nit', 'monto'];
+  private calcularRiesgo(
+    discrepancias: Discrepancia[],
+  ): "bajo" | "medio" | "alto" {
+    const camposCriticos = ["nit", "monto"];
     const tieneCritico = discrepancias.some((d) =>
       camposCriticos.includes(d.campo),
     );
 
-    if (tieneCritico) return 'alto';
-    if (discrepancias.length > 1) return 'medio';
-    return 'bajo';
+    if (tieneCritico) return "alto";
+    if (discrepancias.length > 1) return "medio";
+    return "bajo";
   }
 }

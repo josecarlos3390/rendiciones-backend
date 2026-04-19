@@ -1,6 +1,12 @@
 /**
  * Interfaces para las sugerencias de clasificación de gastos
  */
+import {
+  CuentaIA,
+  ProyectoIA,
+  NormaIA,
+  HistorialIA,
+} from "../services/claude.service";
 
 /**
  * Sugerencia de cuenta contable
@@ -63,7 +69,7 @@ export interface NormaSugerida {
  */
 export interface ClasificacionSugeridaResponse {
   /** Modo de operación: ONLINE u OFFLINE */
-  modo: 'ONLINE' | 'OFFLINE';
+  modo: "ONLINE" | "OFFLINE";
   /** Cuenta contable sugerida */
   cuentaContable: CuentaSugerida;
   /** Dimensión/centro de costo sugerido (modo online) */
@@ -75,7 +81,7 @@ export interface ClasificacionSugeridaResponse {
   /** Explicación de la sugerencia */
   razon: string;
   /** Fuente de datos utilizada */
-  fuenteDatos: 'sap_service_layer' | 'postgres_local';
+  fuenteDatos: "sap_service_layer" | "postgres_local";
   /** Timestamp de la sugerencia */
   timestamp: string;
 }
@@ -93,13 +99,13 @@ export interface ClasificacionContext {
   /** true si está en modo online */
   esOnline: boolean;
   /** Cuentas contables disponibles */
-  cuentasDisponibles: any[];
+  cuentasDisponibles: CuentaIA[];
   /** Dimensiones disponibles (modo online) */
-  dimensionesDisponibles?: any[];
+  dimensionesDisponibles?: Record<string, unknown>[];
   /** Proyectos disponibles */
-  proyectosDisponibles?: any[];
+  proyectosDisponibles?: ProyectoIA[];
   /** Normas disponibles (modo offline) */
-  normasDisponibles?: any[];
+  normasDisponibles?: NormaIA[];
   /** Historial de clasificaciones del usuario */
-  historialUsuario: any[];
+  historialUsuario: HistorialIA[];
 }

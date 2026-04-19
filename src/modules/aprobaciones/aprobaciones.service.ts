@@ -1,16 +1,25 @@
 import {
-  Injectable, NotFoundException, ForbiddenException,
-  BadRequestException, Logger,
-} from '@nestjs/common';
-import { AprobacionesHanaRepository } from './repositories/aprobaciones.hana.repository';
-import { RendMService } from '../rend-m/rend-m.service';
+  Injectable,
+  Inject,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+  Logger,
+} from "@nestjs/common";
+import { EstadoRendicion } from "@common/enums";
+import {
+  IAprobacionesRepository,
+  APROBACIONES_REPOSITORY,
+} from "./repositories/aprobaciones.repository.interface";
+import { RendMService } from "@modules/rend-m/rend-m.service";
 
 @Injectable()
 export class AprobacionesService {
   private readonly logger = new Logger(AprobacionesService.name);
 
   constructor(
-    private readonly repo:     AprobacionesHanaRepository,
+    @Inject(APROBACIONES_REPOSITORY)
+    private readonly repo: IAprobacionesRepository,
     private readonly rendMSvc: RendMService,
   ) {}
 
@@ -47,13 +56,16 @@ export class AprobacionesService {
    */
   async enviar(idRendicion: number, subId: string, loginUsuario: string) {
     const rend = await this.rendMSvc.findOne(idRendicion);
-    if (!rend) throw new NotFoundException(`Rendición ${idRendicion} no encontrada`);
+    if (!rend)
+      throw new NotFoundException(`Rendición ${idRendicion} no encontrada`);
 
     if (String(rend.U_IdUsuario) !== subId) {
-      throw new ForbiddenException('Solo el dueño puede enviar esta rendición');
+      throw new ForbiddenException("Solo el dueño puede enviar esta rendición");
     }
-    if (rend.U_Estado !== 1) {
-      throw new BadRequestException('Solo se pueden enviar rendiciones en estado ABIERTO (1)');
+    if (rend.U_Estado !== EstadoRendicion.ABIERTO) {
+      throw new BadRequestException(
+        "Solo se pueden enviar rendiciones en estado ABIERTO (1)",
+      );
     }
 
     // Resolver cadena de aprobadores desde U_NomSup
@@ -61,28 +73,36 @@ export class AprobacionesService {
 
     if (!cadena.length) {
       // Sin aprobadores → se aprueba automáticamente
-      await this.rendMSvc.updateEstado(idRendicion, 7); // 7=APROBADO
-      this.logger.log(`Rendición ${idRendicion} auto-aprobada (sin cadena de aprobación)`);
-      return { message: 'Rendición aprobada automáticamente — no tiene aprobadores configurados', niveles: [] };
+      await this.rendMSvc.updateEstado(idRendicion, EstadoRendicion.APROBADO); // 7=APROBADO
+      this.logger.log(
+        `Rendición ${idRendicion} auto-aprobada (sin cadena de aprobación)`,
+      );
+      return {
+        message:
+          "Rendición aprobada automáticamente — no tiene aprobadores configurados",
+        niveles: [],
+      };
     }
 
-    // Limpiar aprobaciones anteriores (por si fue rechazada y reenviada)
-    await this.repo.deleteByRendicion(idRendicion);
-
-    // Crear registros de aprobación
+    // Crear registros de aprobación (transaccional: limpia anteriores e inserta nuevos)
     const niveles = cadena.map((ap, idx) => ({
       U_IdRendicion: idRendicion,
-      U_Nivel:       idx + 1,
-      U_LoginAprob:  ap.login,
-      U_NomAprob:    ap.nombre,
+      U_Nivel: idx + 1,
+      U_LoginAprob: ap.login,
+      U_NomAprob: ap.nombre,
     }));
-    await this.repo.createNiveles(niveles);
+    await this.repo.recrearNiveles(idRendicion, niveles);
 
     // Cambiar estado a ENVIADO (4)
-    await this.rendMSvc.updateEstado(idRendicion, 4); // 4=ENVIADO
+    await this.rendMSvc.updateEstado(idRendicion, EstadoRendicion.ENVIADO); // 4=ENVIADO
 
-    this.logger.log(`Rendición ${idRendicion} enviada — ${cadena.length} nivel(es) de aprobación`);
-    return { message: `Rendición enviada — ${cadena.length} nivel(es) de aprobación`, niveles };
+    this.logger.log(
+      `Rendición ${idRendicion} enviada — ${cadena.length} nivel(es) de aprobación`,
+    );
+    return {
+      message: `Rendición enviada — ${cadena.length} nivel(es) de aprobación`,
+      niveles,
+    };
   }
 
   /**
@@ -91,28 +111,45 @@ export class AprobacionesService {
    */
   async aprobar(idRendicion: number, loginAprob: string, comentario?: string) {
     const rend = await this.rendMSvc.findOne(idRendicion);
-    if (!rend) throw new NotFoundException(`Rendición ${idRendicion} no encontrada`);
-    if (rend.U_Estado !== 4) throw new BadRequestException('La rendición no está en estado ENVIADO (4)');
+    if (!rend)
+      throw new NotFoundException(`Rendición ${idRendicion} no encontrada`);
+    if (rend.U_Estado !== EstadoRendicion.ENVIADO)
+      throw new BadRequestException(
+        "La rendición no está en estado ENVIADO (4)",
+      );
 
     // Verificar que sea el turno de este aprobador
     const pendientes = await this.repo.findPendientesParaAprobador(loginAprob);
-    const miAprobacion = pendientes.find(p => p.U_IdRendicion === idRendicion);
+    const miAprobacion = pendientes.find(
+      (p) => p.U_IdRendicion === idRendicion,
+    );
     if (!miAprobacion) {
-      throw new ForbiddenException('No tenés una aprobación pendiente para esta rendición o no es tu turno');
+      throw new ForbiddenException(
+        "No tenés una aprobación pendiente para esta rendición o no es tu turno",
+      );
     }
 
-    await this.repo.updateEstado(idRendicion, miAprobacion.U_Nivel, 'APROBADO', comentario);
-    this.logger.log(`Rendición ${idRendicion} — nivel ${miAprobacion.U_Nivel} aprobado por ${loginAprob}`);
+    const resultado = await this.repo.aprobarNivelConCabecera(
+      idRendicion,
+      miAprobacion.U_Nivel,
+      comentario,
+    );
+    this.logger.log(
+      `Rendición ${idRendicion} — nivel ${miAprobacion.U_Nivel} aprobado por ${loginAprob}`,
+    );
 
-    // Verificar si todos aprobaron
-    const todosAprobados = await this.repo.allApproved(idRendicion);
-    if (todosAprobados) {
-      await this.rendMSvc.updateEstado(idRendicion, 7); // 7=APROBADO
+    if (resultado.estadoFinal === "APROBADO") {
       this.logger.log(`Rendición ${idRendicion} — APROBADA COMPLETAMENTE`);
-      return { message: 'Rendición aprobada completamente', estadoFinal: 'APROBADO' };
+      return {
+        message: "Rendición aprobada completamente",
+        estadoFinal: "APROBADO",
+      };
     }
 
-    return { message: `Nivel ${miAprobacion.U_Nivel} aprobado — esperando niveles superiores`, estadoFinal: 'ENVIADO' };
+    return {
+      message: `Nivel ${miAprobacion.U_Nivel} aprobado — esperando niveles superiores`,
+      estadoFinal: "ENVIADO",
+    };
   }
 
   /**
@@ -121,22 +158,37 @@ export class AprobacionesService {
    */
   async rechazar(idRendicion: number, loginAprob: string, comentario?: string) {
     const rend = await this.rendMSvc.findOne(idRendicion);
-    if (!rend) throw new NotFoundException(`Rendición ${idRendicion} no encontrada`);
-    if (rend.U_Estado !== 4) throw new BadRequestException('La rendición no está en estado ENVIADO (4)');
+    if (!rend)
+      throw new NotFoundException(`Rendición ${idRendicion} no encontrada`);
+    if (rend.U_Estado !== EstadoRendicion.ENVIADO)
+      throw new BadRequestException(
+        "La rendición no está en estado ENVIADO (4)",
+      );
 
     const pendientes = await this.repo.findPendientesParaAprobador(loginAprob);
-    const miAprobacion = pendientes.find(p => p.U_IdRendicion === idRendicion);
+    const miAprobacion = pendientes.find(
+      (p) => p.U_IdRendicion === idRendicion,
+    );
     if (!miAprobacion) {
-      throw new ForbiddenException('No tenés una aprobación pendiente para esta rendición');
+      throw new ForbiddenException(
+        "No tenés una aprobación pendiente para esta rendición",
+      );
     }
 
-    // Marcar nivel como rechazado
-    await this.repo.updateEstado(idRendicion, miAprobacion.U_Nivel, 'RECHAZADO', comentario);
+    // Rechazar nivel y volver cabecera a ABIERTO en una sola transacción
+    await this.repo.rechazarNivelConCabecera(
+      idRendicion,
+      miAprobacion.U_Nivel,
+      comentario,
+    );
 
-    // Limpiar todos los niveles y volver a ABIERTO
-    await this.rendMSvc.updateEstado(idRendicion, 1);
-
-    this.logger.log(`Rendición ${idRendicion} RECHAZADA por ${loginAprob} — vuelve a ABIERTO`);
-    return { message: 'Rendición rechazada — vuelve al estado ABIERTO para correcciones', estadoFinal: 'ABIERTO' };
+    this.logger.log(
+      `Rendición ${idRendicion} RECHAZADA por ${loginAprob} — vuelve a ABIERTO`,
+    );
+    return {
+      message:
+        "Rendición rechazada — vuelve al estado ABIERTO para correcciones",
+      estadoFinal: "ABIERTO",
+    };
   }
 }

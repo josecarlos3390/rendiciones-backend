@@ -1,7 +1,36 @@
-import { Injectable, Logger } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
-import { AiConfigService } from './ai-config.service';
-import { InvoiceData } from '../interfaces/pdf-result.interface';
+import { Injectable, Logger } from "@nestjs/common";
+import Anthropic from "@anthropic-ai/sdk";
+import { AiConfigService } from "./ai-config.service";
+import { InvoiceData } from "../interfaces/pdf-result.interface";
+
+export type CuentaIA = {
+  id?: number;
+  code?: string;
+  cuenta?: string;
+  name?: string;
+  descripcion?: string;
+  formatCode?: string;
+  type?: string;
+};
+export type ProyectoIA = {
+  idProyecto?: number | string;
+  code?: string;
+  name?: string;
+  descripcion?: string;
+};
+export type NormaIA = { idNorma?: number; id?: number; descripcion?: string };
+export type HistorialIA = { concepto: string; cuenta: string; norma?: string };
+
+interface ChatContexto {
+  usuario?: { nombre?: string; departamento?: string };
+  statsMes?: {
+    mes?: string;
+    totalGastado?: number;
+    cantidadRendiciones?: number;
+  };
+  modo?: string;
+  [key: string]: unknown;
+}
 
 @Injectable()
 export class ClaudeService {
@@ -24,7 +53,7 @@ export class ClaudeService {
     filename: string,
   ): Promise<{ data: InvoiceData; confidence: number }> {
     if (!this.client) {
-      throw new Error('Claude no está configurado');
+      throw new Error("Claude no está configurado");
     }
 
     try {
@@ -37,25 +66,25 @@ export class ClaudeService {
         system: this.getSystemPrompt(),
         messages: [
           {
-            role: 'user',
+            role: "user",
             content: this.getUserPrompt(textContent),
           },
         ],
       });
 
       const content = response.content[0];
-      if (content.type !== 'text') {
-        throw new Error('Respuesta inesperada de Claude');
+      if (content.type !== "text") {
+        throw new Error("Respuesta inesperada de Claude");
       }
 
       const result = this.parseResponse(content.text);
       this.logger.log(`Factura procesada exitosamente: ${filename}`);
 
       return result;
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.logger.error(
-        `Error procesando con Claude: ${error.message}`,
-        error.stack,
+        `Error procesando con Claude: ${error instanceof Error ? error.message : String(error)}`,
+        error instanceof Error ? error.stack : undefined,
       );
       throw error;
     }
@@ -69,7 +98,7 @@ export class ClaudeService {
     filename: string,
   ): Promise<{ data: InvoiceData; confidence: number }> {
     if (!this.client) {
-      throw new Error('Claude no está configurado');
+      throw new Error("Claude no está configurado");
     }
 
     try {
@@ -82,18 +111,18 @@ export class ClaudeService {
         system: this.getSystemPrompt(),
         messages: [
           {
-            role: 'user',
+            role: "user",
             content: [
               {
-                type: 'image',
+                type: "image",
                 source: {
-                  type: 'base64',
-                  media_type: 'image/png',
+                  type: "base64",
+                  media_type: "image/png",
                   data: base64Image,
                 },
               },
               {
-                type: 'text',
+                type: "text",
                 text: this.getImagePrompt(),
               },
             ],
@@ -102,18 +131,18 @@ export class ClaudeService {
       });
 
       const content = response.content[0];
-      if (content.type !== 'text') {
-        throw new Error('Respuesta inesperada de Claude');
+      if (content.type !== "text") {
+        throw new Error("Respuesta inesperada de Claude");
       }
 
       const result = this.parseResponse(content.text);
       this.logger.log(`Imagen procesada exitosamente: ${filename}`);
 
       return result;
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.logger.error(
-        `Error procesando imagen con Claude: ${error.message}`,
-        error.stack,
+        `Error procesando imagen con Claude: ${error instanceof Error ? error.message : String(error)}`,
+        error instanceof Error ? error.stack : undefined,
       );
       throw error;
     }
@@ -179,8 +208,8 @@ Responde con el objeto JSON siguiendo las reglas del sistema.`;
     try {
       // Limpiar respuesta (quitar markdown si existe)
       const cleanJson = responseText
-        .replace(/```json\n?/g, '')
-        .replace(/```\n?/g, '')
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
         .trim();
 
       const parsed = JSON.parse(cleanJson);
@@ -196,19 +225,21 @@ Responde con el objeto JSON siguiendo las reglas del sistema.`;
         razonSocial: parsed.razonSocial || undefined,
         numeroFactura: parsed.numeroFactura || undefined,
         fecha: parsed.fecha || undefined,
-        monto: typeof parsed.monto === 'number' ? parsed.monto : undefined,
+        monto: typeof parsed.monto === "number" ? parsed.monto : undefined,
         concepto: parsed.concepto || undefined,
         codigoControl: parsed.codigoControl || null,
         cuf: parsed.cuf || null,
       };
 
       return { data, confidence };
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.logger.error(
-        `Error parseando respuesta de Claude: ${error.message}`,
+        `Error parseando respuesta de Claude: ${error instanceof Error ? error.message : String(error)}`,
       );
       this.logger.debug(`Respuesta recibida: ${responseText}`);
-      throw new Error(`No se pudo parsear la respuesta de Claude: ${error.message}`);
+      throw new Error(
+        `No se pudo parsear la respuesta de Claude: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -220,18 +251,28 @@ Responde con el objeto JSON siguiendo las reglas del sistema.`;
     monto: number;
     proveedor?: string;
     esOnline: boolean;
-    cuentasDisponibles: any[];
-    proyectosDisponibles?: any[];
-    normasDisponibles?: any[];
-    historialUsuario: any[];
+    cuentasDisponibles: CuentaIA[];
+    proyectosDisponibles?: ProyectoIA[];
+    normasDisponibles?: NormaIA[];
+    historialUsuario: HistorialIA[];
   }): Promise<{
-    cuentaContable: { id: string; codigo: string; nombre: string; confianza: number };
+    cuentaContable: {
+      id: string;
+      codigo: string;
+      nombre: string;
+      confianza: number;
+    };
     norma?: { idNorma: number; descripcion: string; confianza: number };
-    proyecto?: { id: string; codigo: string; nombre: string; confianza: number } | null;
+    proyecto?: {
+      id: string;
+      codigo: string;
+      nombre: string;
+      confianza: number;
+    } | null;
     razon: string;
   }> {
     if (!this.client) {
-      throw new Error('Claude no está configurado');
+      throw new Error("Claude no está configurado");
     }
 
     try {
@@ -244,23 +285,28 @@ Responde con el objeto JSON siguiendo las reglas del sistema.`;
         system: this.getClasificadorSystemPrompt(context.esOnline),
         messages: [
           {
-            role: 'user',
+            role: "user",
             content: this.getClasificadorUserPrompt(context),
           },
         ],
       });
 
       const content = response.content[0];
-      if (content.type !== 'text') {
-        throw new Error('Respuesta inesperada de Claude');
+      if (content.type !== "text") {
+        throw new Error("Respuesta inesperada de Claude");
       }
 
       const result = this.parseClasificacionResponse(content.text);
-      this.logger.log(`Clasificación sugerida: ${result.cuentaContable.codigo} (${result.cuentaContable.confianza})`);
+      this.logger.log(
+        `Clasificación sugerida: ${result.cuentaContable.codigo} (${result.cuentaContable.confianza})`,
+      );
 
       return result;
-    } catch (error: any) {
-      this.logger.error(`Error sugiriendo clasificación: ${error.message}`, error.stack);
+    } catch (error: unknown) {
+      this.logger.error(
+        `Error sugiriendo clasificación: ${error instanceof Error ? error.message : String(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
       throw error;
     }
   }
@@ -269,9 +315,9 @@ Responde con el objeto JSON siguiendo las reglas del sistema.`;
    * Prompt del sistema para el clasificador
    */
   private getClasificadorSystemPrompt(esOnline: boolean): string {
-    const modoDesc = esOnline 
-      ? 'modo ONLINE con SAP Business One (usas ChartOfAccounts, Dimensions, Projects)'
-      : 'modo OFFLINE con base de datos local (usas COA, Normas, Proyectos)';
+    const modoDesc = esOnline
+      ? "modo ONLINE con SAP Business One (usas ChartOfAccounts, Dimensions, Projects)"
+      : "modo OFFLINE con base de datos local (usas COA, Normas, Proyectos)";
 
     return `Eres un asistente contable experto especializado en clasificación de gastos para empresas bolivianas.
 
@@ -303,7 +349,7 @@ Estructura de respuesta requerida:
 Notas:
 - La norma solo aplica en modo OFFLINE; en modo ONLINE usa null
 - El proyecto es opcional; si no aplica, devuelve null
-- Usa patrones del historial del usuario cuando estén disponibles`
+- Usa patrones del historial del usuario cuando estén disponibles`;
   }
 
   /**
@@ -314,37 +360,47 @@ Notas:
     monto: number;
     proveedor?: string;
     esOnline: boolean;
-    cuentasDisponibles: any[];
-    proyectosDisponibles?: any[];
-    normasDisponibles?: any[];
-    historialUsuario: any[];
+    cuentasDisponibles: CuentaIA[];
+    proyectosDisponibles?: ProyectoIA[];
+    normasDisponibles?: NormaIA[];
+    historialUsuario: HistorialIA[];
   }): string {
     const cuentasStr = context.cuentasDisponibles
-      .map(c => `- ${c.code || c.cuenta}: ${c.name || c.descripcion}`)
-      .join('\n');
+      .map((c) => `- ${c.code || c.cuenta}: ${c.name || c.descripcion}`)
+      .join("\n");
 
-    const normasStr = !context.esOnline && context.normasDisponibles
-      ? '\n\nNORMAS DISPONIBLES:\n' +
-        context.normasDisponibles.map(n => `- ${n.idNorma}: ${n.descripcion}`).join('\n')
-      : '';
+    const normasStr =
+      !context.esOnline && context.normasDisponibles
+        ? "\n\nNORMAS DISPONIBLES:\n" +
+          context.normasDisponibles
+            .map((n) => `- ${n.idNorma}: ${n.descripcion}`)
+            .join("\n")
+        : "";
 
     const proyectosStr = context.proyectosDisponibles?.length
-      ? '\n\nPROYECTOS DISPONIBLES:\n' +
-        context.proyectosDisponibles.map(p => `- ${p.code || p.idProyecto}: ${p.name || p.descripcion}`).join('\n')
-      : '';
+      ? "\n\nPROYECTOS DISPONIBLES:\n" +
+        context.proyectosDisponibles
+          .map((p) => `- ${p.code || p.idProyecto}: ${p.name || p.descripcion}`)
+          .join("\n")
+      : "";
 
     const historialStr = context.historialUsuario.length
-      ? '\n\nHISTORIAL DE CLASIFICACIONES DEL USUARIO (últimas ' + context.historialUsuario.length + '):\n' +
-        context.historialUsuario.map(h => 
-          `- "${h.concepto}" → Cuenta: ${h.cuenta}${context.esOnline ? '' : ', Norma: ' + h.norma}`
-        ).join('\n')
-      : '';
+      ? "\n\nHISTORIAL DE CLASIFICACIONES DEL USUARIO (últimas " +
+        context.historialUsuario.length +
+        "):\n" +
+        context.historialUsuario
+          .map(
+            (h) =>
+              `- "${h.concepto}" → Cuenta: ${h.cuenta}${context.esOnline ? "" : ", Norma: " + h.norma}`,
+          )
+          .join("\n")
+      : "";
 
     return `GASTO A CLASIFICAR:
 - Concepto: "${context.concepto}"
 - Monto: ${context.monto} Bs.
-- Proveedor: ${context.proveedor || 'No especificado'}
-- Modo: ${context.esOnline ? 'ONLINE (SAP)' : 'OFFLINE (local)'}
+- Proveedor: ${context.proveedor || "No especificado"}
+- Modo: ${context.esOnline ? "ONLINE (SAP)" : "OFFLINE (local)"}
 
 CUENTAS CONTABLES DISPONIBLES:
 ${cuentasStr}${normasStr}${proyectosStr}${historialStr}
@@ -357,27 +413,50 @@ Responde con el JSON de clasificación sugerida.`;
    */
   async analizarRendicion(contexto: {
     idRendicion: number;
-    rendicion: { monto: number; fecha: string; estado: string; descripcion?: string };
-    solicitante: { id: string; nombre: string; departamento?: string; fechaRegistro: string };
-    historial: Array<{ idRendicion: number; monto: number; estado: string; fecha: string }>;
-    facturas: Array<{ nit: string; proveedor: string; monto: number; cuf?: string; validadoSiat?: boolean }>;
+    rendicion: {
+      monto: number;
+      fecha: string;
+      estado: string;
+      descripcion?: string;
+    };
+    solicitante: {
+      id: string;
+      nombre: string;
+      departamento?: string;
+      fechaRegistro: string;
+    };
+    historial: Array<{
+      idRendicion: number;
+      monto: number;
+      estado: string;
+      fecha: string;
+    }>;
+    facturas: Array<{
+      nit: string;
+      proveedor: string;
+      monto: number;
+      cuf?: string;
+      validadoSiat?: boolean;
+    }>;
     statsDepartamento?: { montoPromedio: number; cantidadRendiciones: number };
     esOnline: boolean;
   }): Promise<{
     scoreRiesgo: number;
-    nivel: 'bajo' | 'medio' | 'alto';
-    recomendacion: 'aprobar' | 'rechazar' | 'revisar';
+    nivel: "bajo" | "medio" | "alto";
+    recomendacion: "aprobar" | "rechazar" | "revisar";
     justificacion: string;
     factoresPositivos: string[];
     factoresRiesgo: string[];
     alertas: string[];
   }> {
     if (!this.client) {
-      throw new Error('Claude no está configurado');
+      throw new Error("Claude no está configurado");
     }
 
     try {
-      this.logger.log(`Analizando rendición ${contexto.idRendicion} con Claude`);
+      this.logger.log(
+        `Analizando rendición ${contexto.idRendicion} con Claude`,
+      );
 
       const prompt = this.buildAnalisisRendicionPrompt(contexto);
 
@@ -402,23 +481,27 @@ Criterios de riesgo:
 - ALTO: Montos muy superiores al historial, facturas sin CUF, patrones sospechosos`,
         messages: [
           {
-            role: 'user',
+            role: "user",
             content: prompt,
           },
         ],
       });
 
       const content = response.content[0];
-      if (content.type !== 'text') {
-        throw new Error('Respuesta inesperada de Claude');
+      if (content.type !== "text") {
+        throw new Error("Respuesta inesperada de Claude");
       }
 
       const resultado = this.parseAnalisisRendicionResponse(content.text);
-      this.logger.log(`Análisis completado: Score ${resultado.scoreRiesgo}, Nivel ${resultado.nivel}`);
+      this.logger.log(
+        `Análisis completado: Score ${resultado.scoreRiesgo}, Nivel ${resultado.nivel}`,
+      );
 
       return resultado;
-    } catch (error: any) {
-      this.logger.error(`Error analizando rendición: ${error.message}`);
+    } catch (error: unknown) {
+      this.logger.error(
+        `Error analizando rendición: ${error instanceof Error ? error.message : String(error)}`,
+      );
       throw error;
     }
   }
@@ -428,36 +511,62 @@ Criterios de riesgo:
    */
   private buildAnalisisRendicionPrompt(contexto: {
     idRendicion: number;
-    rendicion: { monto: number; fecha: string; estado: string; descripcion?: string };
-    solicitante: { id: string; nombre: string; departamento?: string; fechaRegistro: string };
-    historial: Array<{ idRendicion: number; monto: number; estado: string; fecha: string }>;
-    facturas: Array<{ nit: string; proveedor: string; monto: number; cuf?: string; validadoSiat?: boolean }>;
+    rendicion: {
+      monto: number;
+      fecha: string;
+      estado: string;
+      descripcion?: string;
+    };
+    solicitante: {
+      id: string;
+      nombre: string;
+      departamento?: string;
+      fechaRegistro: string;
+    };
+    historial: Array<{
+      idRendicion: number;
+      monto: number;
+      estado: string;
+      fecha: string;
+    }>;
+    facturas: Array<{
+      nit: string;
+      proveedor: string;
+      monto: number;
+      cuf?: string;
+      validadoSiat?: boolean;
+    }>;
     statsDepartamento?: { montoPromedio: number; cantidadRendiciones: number };
     esOnline: boolean;
   }): string {
-    const promedioHistorial = contexto.historial.length > 0
-      ? contexto.historial.reduce((sum, h) => sum + h.monto, 0) / contexto.historial.length
-      : 0;
+    const promedioHistorial =
+      contexto.historial.length > 0
+        ? contexto.historial.reduce((sum, h) => sum + h.monto, 0) /
+          contexto.historial.length
+        : 0;
 
-    const tasaAprobacion = contexto.historial.length > 0
-      ? (contexto.historial.filter(h => h.estado === 'APROBADA').length / contexto.historial.length) * 100
-      : 0;
+    const tasaAprobacion =
+      contexto.historial.length > 0
+        ? (contexto.historial.filter((h) => h.estado === "APROBADA").length /
+            contexto.historial.length) *
+          100
+        : 0;
 
     return `Analiza la siguiente rendición y proporciona una recomendación:
 
 RENDICIÓN A ANALIZAR:
 - ID: ${contexto.idRendicion}
 - Monto: ${contexto.rendicion.monto} Bs.
-- Descripción: ${contexto.rendicion.descripcion || 'No proporcionada'}
+- Descripción: ${contexto.rendicion.descripcion || "No proporcionada"}
 - Fecha: ${contexto.rendicion.fecha}
 
 SOLICITANTE:
 - Nombre: ${contexto.solicitante.nombre}
-- Departamento: ${contexto.solicitante.departamento || 'No especificado'}
+- Departamento: ${contexto.solicitante.departamento || "No especificado"}
 - Antigüedad: ${this.calcularMeses(contexto.solicitante.fechaRegistro)} meses
 
 HISTORIAL DEL SOLICITANTE (${contexto.historial.length} rendiciones):
-${contexto.historial.map(h => `- Rendición ${h.idRendicion}: ${h.monto} Bs. (${h.estado}) - ${h.fecha}`).join('\n')}
+${contexto.historial.map((h) => `- Rendición ${h.idRendicion}: ${h.monto} Bs. (${h.estado}) - ${h.fecha}`).join("\n")}
 
 ESTADÍSTICAS:
 - Monto promedio historial: ${promedioHistorial.toFixed(2)} Bs.
@@ -466,9 +575,9 @@ ESTADÍSTICAS:
 - Variación vs promedio: ${promedioHistorial > 0 ? (((contexto.rendicion.monto - promedioHistorial) / promedioHistorial) * 100).toFixed(0) : 0}%
 
 FACTURAS (${contexto.facturas.length}):
-${contexto.facturas.map(f => `- ${f.proveedor}: ${f.monto} Bs. (NIT: ${f.nit}) ${f.validadoSiat ? '✓ Validada SIAT' : '✗ Sin validar'} ${f.cuf ? '' : '- SIN CUF'}`).join('\n')}
+${contexto.facturas.map((f) => `- ${f.proveedor}: ${f.monto} Bs. (NIT: ${f.nit}) ${f.validadoSiat ? "✓ Validada SIAT" : "✗ Sin validar"} ${f.cuf ? "" : "- SIN CUF"}`).join("\n")}
 
-MODO: ${contexto.esOnline ? 'ONLINE (con SAP)' : 'OFFLINE (local)'}
+MODO: ${contexto.esOnline ? "ONLINE (con SAP)" : "OFFLINE (local)"}
 
 Responde con este JSON exacto:
 {
@@ -488,7 +597,9 @@ Responde con este JSON exacto:
   private calcularMeses(fecha: string): number {
     const date = new Date(fecha);
     const now = new Date();
-    return Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24 * 30));
+    return Math.floor(
+      (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24 * 30),
+    );
   }
 
   /**
@@ -497,19 +608,21 @@ Responde con este JSON exacto:
   async procesarChat(contexto: {
     mensaje: string;
     historial: Array<{ rol: string; contenido: string }>;
-    contexto: any;
+    contexto: ChatContexto;
   }): Promise<{
     mensaje: string;
     tipo: string;
-    datos?: any;
+    datos?: unknown;
     sugerencias?: string[];
   }> {
     if (!this.client) {
-      throw new Error('Claude no está configurado');
+      throw new Error("Claude no está configurado");
     }
 
     try {
-      this.logger.log(`Procesando chat: "${contexto.mensaje.substring(0, 50)}..."`);
+      this.logger.log(
+        `Procesando chat: "${contexto.mensaje.substring(0, 50)}..."`,
+      );
 
       const prompt = this.buildChatPrompt(contexto);
 
@@ -547,20 +660,22 @@ CONTEXTO DISPONIBLE:
 - Presupuesto (solo modo ONLINE)`,
         messages: [
           {
-            role: 'user',
+            role: "user",
             content: prompt,
           },
         ],
       });
 
       const content = response.content[0];
-      if (content.type !== 'text') {
-        throw new Error('Respuesta inesperada');
+      if (content.type !== "text") {
+        throw new Error("Respuesta inesperada");
       }
 
       return this.parseChatResponse(content.text);
-    } catch (error: any) {
-      this.logger.error(`Error en chat: ${error.message}`);
+    } catch (error: unknown) {
+      this.logger.error(
+        `Error en chat: ${error instanceof Error ? error.message : String(error)}`,
+      );
       throw error;
     }
   }
@@ -571,22 +686,25 @@ CONTEXTO DISPONIBLE:
   private buildChatPrompt(contexto: {
     mensaje: string;
     historial: Array<{ rol: string; contenido: string }>;
-    contexto: any;
+    contexto: ChatContexto;
   }): string {
     const historialStr = contexto.historial
-      .map(h => `${h.rol === 'usuario' ? 'Usuario' : 'Asistente'}: ${h.contenido}`)
-      .join('\n');
+      .map(
+        (h) =>
+          `${h.rol === "usuario" ? "Usuario" : "Asistente"}: ${h.contenido}`,
+      )
+      .join("\n");
 
     return `CONTEXTO DEL USUARIO:
-- Nombre: ${contexto.contexto.usuario?.nombre || 'Usuario'}
-- Departamento: ${contexto.contexto.usuario?.departamento || 'No especificado'}
-- Mes actual: ${contexto.contexto.statsMes?.mes || 'Abril 2026'}
+- Nombre: ${contexto.contexto.usuario?.nombre || "Usuario"}
+- Departamento: ${contexto.contexto.usuario?.departamento || "No especificado"}
+- Mes actual: ${contexto.contexto.statsMes?.mes || "Abril 2026"}
 - Total gastado este mes: ${contexto.contexto.statsMes?.totalGastado || 6500} Bs.
 - Rendiciones este mes: ${contexto.contexto.statsMes?.cantidadRendiciones || 3}
-- Modo: ${contexto.contexto.modo || 'ONLINE'}
+- Modo: ${contexto.contexto.modo || "ONLINE"}
 
 HISTORIAL DE CONVERSACIÓN:
-${historialStr || 'Nueva conversación'}
+${historialStr || "Nueva conversación"}
 
 CONSULTA ACTUAL:
 Usuario: ${contexto.mensaje}
@@ -611,20 +729,20 @@ Responde como el asistente con formato. JSON requerido:
   private parseChatResponse(responseText: string): {
     mensaje: string;
     tipo: string;
-    datos?: any;
+    datos?: unknown;
     sugerencias?: string[];
   } {
     try {
       const cleanJson = responseText
-        .replace(/```json\n?/g, '')
-        .replace(/```\n?/g, '')
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
         .trim();
 
       const parsed = JSON.parse(cleanJson);
 
       return {
         mensaje: parsed.mensaje || parsed.message || responseText,
-        tipo: parsed.tipo || 'texto',
+        tipo: parsed.tipo || "texto",
         datos: parsed.datos,
         sugerencias: parsed.sugerencias || [],
       };
@@ -632,7 +750,7 @@ Responde como el asistente con formato. JSON requerido:
       // Si no es JSON válido, devolver el texto como mensaje
       return {
         mensaje: responseText,
-        tipo: 'texto',
+        tipo: "texto",
         sugerencias: [],
       };
     }
@@ -643,8 +761,8 @@ Responde como el asistente con formato. JSON requerido:
    */
   private parseAnalisisRendicionResponse(responseText: string): {
     scoreRiesgo: number;
-    nivel: 'bajo' | 'medio' | 'alto';
-    recomendacion: 'aprobar' | 'rechazar' | 'revisar';
+    nivel: "bajo" | "medio" | "alto";
+    recomendacion: "aprobar" | "rechazar" | "revisar";
     justificacion: string;
     factoresPositivos: string[];
     factoresRiesgo: string[];
@@ -652,33 +770,39 @@ Responde como el asistente con formato. JSON requerido:
   } {
     try {
       const cleanJson = responseText
-        .replace(/```json\n?/g, '')
-        .replace(/```\n?/g, '')
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
         .trim();
 
       const parsed = JSON.parse(cleanJson);
 
       return {
         scoreRiesgo: parsed.scoreRiesgo || 50,
-        nivel: ['bajo', 'medio', 'alto'].includes(parsed.nivel) ? parsed.nivel : 'medio',
-        recomendacion: ['aprobar', 'rechazar', 'revisar'].includes(parsed.recomendacion)
+        nivel: ["bajo", "medio", "alto"].includes(parsed.nivel)
+          ? parsed.nivel
+          : "medio",
+        recomendacion: ["aprobar", "rechazar", "revisar"].includes(
+          parsed.recomendacion,
+        )
           ? parsed.recomendacion
-          : 'revisar',
-        justificacion: parsed.justificacion || 'Sin justificación',
+          : "revisar",
+        justificacion: parsed.justificacion || "Sin justificación",
         factoresPositivos: parsed.factoresPositivos || [],
         factoresRiesgo: parsed.factoresRiesgo || [],
         alertas: parsed.alertas || [],
       };
-    } catch (error: any) {
-      this.logger.error(`Error parseando análisis: ${error.message}`);
+    } catch (error: unknown) {
+      this.logger.error(
+        `Error parseando análisis: ${error instanceof Error ? error.message : String(error)}`,
+      );
       return {
         scoreRiesgo: 50,
-        nivel: 'medio',
-        recomendacion: 'revisar',
-        justificacion: 'Error al analizar, revisar manualmente',
+        nivel: "medio",
+        recomendacion: "revisar",
+        justificacion: "Error al analizar, revisar manualmente",
         factoresPositivos: [],
-        factoresRiesgo: ['Error en análisis automático'],
-        alertas: ['Revisar manualmente'],
+        factoresRiesgo: ["Error en análisis automático"],
+        alertas: ["Revisar manualmente"],
       };
     }
   }
@@ -688,34 +812,37 @@ Responde como el asistente con formato. JSON requerido:
    */
   async analizarDiscrepancias(prompt: string): Promise<string> {
     if (!this.client) {
-      throw new Error('Claude no está configurado');
+      throw new Error("Claude no está configurado");
     }
 
     try {
-      this.logger.log('Analizando discrepancias con Claude');
+      this.logger.log("Analizando discrepancias con Claude");
 
       const response = await this.client.messages.create({
         model: this.config.anthropicModel,
         max_tokens: 1000,
         temperature: 0.2,
-        system: 'Eres un experto en validación de facturas fiscales de Bolivia. Analiza discrepancias y sugiere acciones.',
+        system:
+          "Eres un experto en validación de facturas fiscales de Bolivia. Analiza discrepancias y sugiere acciones.",
         messages: [
           {
-            role: 'user',
+            role: "user",
             content: prompt,
           },
         ],
       });
 
       const content = response.content[0];
-      if (content.type !== 'text') {
-        throw new Error('Respuesta inesperada de Claude');
+      if (content.type !== "text") {
+        throw new Error("Respuesta inesperada de Claude");
       }
 
-      this.logger.log('Análisis de discrepancias completado');
+      this.logger.log("Análisis de discrepancias completado");
       return content.text;
-    } catch (error: any) {
-      this.logger.error(`Error analizando discrepancias: ${error.message}`);
+    } catch (error: unknown) {
+      this.logger.error(
+        `Error analizando discrepancias: ${error instanceof Error ? error.message : String(error)}`,
+      );
       throw error;
     }
   }
@@ -726,51 +853,51 @@ Responde como el asistente con formato. JSON requerido:
   esConsultaContable(mensaje: string): boolean {
     const palabrasClave = [
       // Términos contables bolivianos
-      'norma contable',
-      'nic',
-      'niif',
-      'ifrs',
-      'gaap',
-      'cvu',
-      'comprobante de venta',
-      'factura',
-      'nota fiscal',
-      'libro de compras',
-      'libro de ventas',
-      'declaración',
-      'ddjj',
-      'it',
-      'iva',
-      'rciva',
-      'transacciones',
-      'retención',
-      'depreciación',
-      'amortización',
-      'ajuste por inflación',
-      'unidad de fomento',
-      'ufv',
+      "norma contable",
+      "nic",
+      "niif",
+      "ifrs",
+      "gaap",
+      "cvu",
+      "comprobante de venta",
+      "factura",
+      "nota fiscal",
+      "libro de compras",
+      "libro de ventas",
+      "declaración",
+      "ddjj",
+      "it",
+      "iva",
+      "rciva",
+      "transacciones",
+      "retención",
+      "depreciación",
+      "amortización",
+      "ajuste por inflación",
+      "unidad de fomento",
+      "ufv",
       // Términos de estados financieros
-      'balance general',
-      'estado de resultados',
-      'estado de situación financiera',
-      'flujo de efectivo',
-      'patrimonio',
+      "balance general",
+      "estado de resultados",
+      "estado de situación financiera",
+      "flujo de efectivo",
+      "patrimonio",
       // Términos específicos Bolivia
-      'impuesto a las transacciones',
-      'iue',
-      'itp',
-      'beneficio del deporte',
-      'patentes',
-      'regalías',
+      "impuesto a las transacciones",
+      "iue",
+      "itp",
+      "beneficio del deporte",
+      "patentes",
+      "regalías",
       // Cuentas específicas
-      'cuenta contable',
-      'asiento',
-      'comprobante',
-      'mayor',
+      "cuenta contable",
+      "asiento",
+      "comprobante",
+      "mayor",
     ];
-    
+
     const mensajeLower = mensaje.toLowerCase();
-    return palabrasClave.some(palabra => mensajeLower.includes(palabra));
+    return palabrasClave.some((palabra) => mensajeLower.includes(palabra));
   }
 
   /**
@@ -781,11 +908,13 @@ Responde como el asistente con formato. JSON requerido:
     fuentes?: string[];
   }> {
     if (!this.client) {
-      throw new Error('Claude no está configurado');
+      throw new Error("Claude no está configurado");
     }
 
     try {
-      this.logger.log(`Consultando norma contable: "${mensaje.substring(0, 50)}..."`);
+      this.logger.log(
+        `Consultando norma contable: "${mensaje.substring(0, 50)}..."`,
+      );
 
       const response = await this.client.messages.create({
         model: this.config.anthropicModel,
@@ -794,26 +923,29 @@ Responde como el asistente con formato. JSON requerido:
         system: this.getContabilidadSystemPrompt(),
         messages: [
           {
-            role: 'user',
+            role: "user",
             content: mensaje,
           },
         ],
       });
 
       const content = response.content[0];
-      if (content.type !== 'text') {
-        throw new Error('Respuesta inesperada de Claude');
+      if (content.type !== "text") {
+        throw new Error("Respuesta inesperada de Claude");
       }
 
       // Extraer fuentes si están citadas
       const fuentes = this.extraerFuentes(content.text);
-      
+
       return {
         respuesta: content.text,
         fuentes: fuentes.length > 0 ? fuentes : undefined,
       };
-    } catch (error: any) {
-      this.logger.error(`Error consultando norma contable: ${error.message}`, error.stack);
+    } catch (error: unknown) {
+      this.logger.error(
+        `Error consultando norma contable: ${error instanceof Error ? error.message : String(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
       throw error;
     }
   }
@@ -881,25 +1013,25 @@ Ejemplo de buena respuesta:
    */
   private extraerFuentes(texto: string): string[] {
     const fuentes: string[] = [];
-    
+
     // Buscar patrones como "Según la NTCB X", "Art. XX del Código...", etc.
     const patrones = [
       /NTCB\s+\d+/gi,
       /NIIF\s+\d+/gi,
       /IFRS\s+\d+/gi,
-      /Art\.?\s*\d+[\d\-\.]*\s+del\s+[\w\s]+/gi,
+      /Art\.?\s*\d+[\d\-.]*\s+del\s+[\w\s]+/gi,
       /Ley\s+\d{4,}/gi,
-      /Decreto\s+(?:Supremo\s+)?(?:N°?\s*)?\d+[\d\-\.]*/gi,
+      /Decreto\s+(?:Supremo\s+)?(?:N°?\s*)?\d+[\d\-.]*/gi,
       /Resolución\s+Normativa\s+\d+/gi,
     ];
-    
+
     for (const patron of patrones) {
       const matches = texto.match(patron);
       if (matches) {
         fuentes.push(...matches);
       }
     }
-    
+
     // Eliminar duplicados
     return [...new Set(fuentes)];
   }
@@ -908,43 +1040,74 @@ Ejemplo de buena respuesta:
    * Parsea la respuesta de clasificación de Claude
    */
   private parseClasificacionResponse(responseText: string): {
-    cuentaContable: { id: string; codigo: string; nombre: string; confianza: number };
+    cuentaContable: {
+      id: string;
+      codigo: string;
+      nombre: string;
+      confianza: number;
+    };
     norma?: { idNorma: number; descripcion: string; confianza: number };
-    proyecto?: { id: string; codigo: string; nombre: string; confianza: number } | null;
+    proyecto?: {
+      id: string;
+      codigo: string;
+      nombre: string;
+      confianza: number;
+    } | null;
     razon: string;
   } {
     try {
       const cleanJson = responseText
-        .replace(/```json\n?/g, '')
-        .replace(/```\n?/g, '')
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
         .trim();
 
       const parsed = JSON.parse(cleanJson);
 
       return {
         cuentaContable: {
-          id: parsed.cuentaContable?.id || '',
-          codigo: parsed.cuentaContable?.codigo || parsed.cuentaContable?.code || '',
-          nombre: parsed.cuentaContable?.nombre || parsed.cuentaContable?.name || '',
-          confianza: parsed.cuentaContable?.confianza || parsed.cuentaContable?.confidence || 0.5,
+          id: parsed.cuentaContable?.id || "",
+          codigo:
+            parsed.cuentaContable?.codigo || parsed.cuentaContable?.code || "",
+          nombre:
+            parsed.cuentaContable?.nombre || parsed.cuentaContable?.name || "",
+          confianza:
+            parsed.cuentaContable?.confianza ||
+            parsed.cuentaContable?.confidence ||
+            0.5,
         },
-        norma: parsed.norma ? {
-          idNorma: parsed.norma.idNorma || parsed.norma.id || 0,
-          descripcion: parsed.norma.descripcion || parsed.norma.descripcion || '',
-          confianza: parsed.norma.confianza || parsed.norma.confidence || 0.5,
-        } : undefined,
-        proyecto: parsed.proyecto === null ? null : (parsed.proyecto ? {
-          id: parsed.proyecto.id || '',
-          codigo: parsed.proyecto.codigo || parsed.proyecto.code || '',
-          nombre: parsed.proyecto.nombre || parsed.proyecto.name || '',
-          confianza: parsed.proyecto.confianza || parsed.proyecto.confidence || 0.5,
-        } : undefined),
-        razon: parsed.razon || parsed.reason || 'Sin justificación',
+        norma: parsed.norma
+          ? {
+              idNorma: parsed.norma.idNorma || parsed.norma.id || 0,
+              descripcion:
+                parsed.norma.descripcion || parsed.norma.descripcion || "",
+              confianza:
+                parsed.norma.confianza || parsed.norma.confidence || 0.5,
+            }
+          : undefined,
+        proyecto:
+          parsed.proyecto === null
+            ? null
+            : parsed.proyecto
+              ? {
+                  id: parsed.proyecto.id || "",
+                  codigo: parsed.proyecto.codigo || parsed.proyecto.code || "",
+                  nombre: parsed.proyecto.nombre || parsed.proyecto.name || "",
+                  confianza:
+                    parsed.proyecto.confianza ||
+                    parsed.proyecto.confidence ||
+                    0.5,
+                }
+              : undefined,
+        razon: parsed.razon || parsed.reason || "Sin justificación",
       };
-    } catch (error: any) {
-      this.logger.error(`Error parseando clasificación: ${error.message}`);
+    } catch (error: unknown) {
+      this.logger.error(
+        `Error parseando clasificación: ${error instanceof Error ? error.message : String(error)}`,
+      );
       this.logger.debug(`Respuesta recibida: ${responseText}`);
-      throw new Error(`No se pudo parsear la clasificación: ${error.message}`);
+      throw new Error(
+        `No se pudo parsear la clasificación: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 }

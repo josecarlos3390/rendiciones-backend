@@ -11,7 +11,6 @@
  *   3. Nada más cambia.
  */
 export interface IDatabaseService {
-
   /**
    * SELECT — retorna todas las filas que coincidan.
    * Los parámetros se pasan como array para evitar SQL injection.
@@ -19,7 +18,7 @@ export interface IDatabaseService {
    * @example
    * db.query<Rendicion>('SELECT * FROM "RENDICIONES" WHERE ID = ?', [id])
    */
-  query<T = any>(sql: string, params?: any[]): Promise<T[]>;
+  query<T = any>(sql: string, params?: unknown[]): Promise<T[]>;
 
   /**
    * SELECT — retorna la primera fila o null si no hay resultados.
@@ -28,7 +27,7 @@ export interface IDatabaseService {
    * @example
    * db.queryOne<Usuario>('SELECT * FROM "USUARIOS" WHERE LOGIN = ?', [login])
    */
-  queryOne<T = any>(sql: string, params?: any[]): Promise<T | null>;
+  queryOne<T = any>(sql: string, params?: unknown[]): Promise<T | null>;
 
   /**
    * INSERT / UPDATE / DELETE — retorna el número de filas afectadas.
@@ -36,7 +35,7 @@ export interface IDatabaseService {
    * @example
    * db.execute('UPDATE "RENDICIONES" SET ESTADO = ? WHERE ID = ?', ['ENVIADA', id])
    */
-  execute(sql: string, params?: any[]): Promise<number>;
+  execute(sql: string, params?: unknown[]): Promise<number>;
 
   /**
    * Ejecuta múltiples operaciones dentro de una transacción atómica.
@@ -66,7 +65,7 @@ export interface IDatabaseService {
    * @example
    * const pass = db.col(row, 'U_Pass');
    */
-  col(row: Record<string, any>, name: string): any;
+  col(row: Record<string, unknown>, name: string): any;
 }
 
 /**
@@ -80,4 +79,4 @@ export interface IDatabaseService {
  * // En un módulo:
  * { provide: DATABASE_SERVICE, useClass: HanaService }
  */
-export const DATABASE_SERVICE = 'DATABASE_SERVICE';
+export const DATABASE_SERVICE = "DATABASE_SERVICE";

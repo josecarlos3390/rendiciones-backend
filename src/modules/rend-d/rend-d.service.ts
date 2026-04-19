@@ -1,30 +1,35 @@
 import {
-  Injectable, Inject, NotFoundException,
-  ForbiddenException, Logger, BadRequestException,
-} from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { IRendDRepository }  from './repositories/rend-d.repository.interface';
-import { RendMService }      from '../rend-m/rend-m.service';
-import { CreateRendDDto }    from './dto/create-rend-d.dto';
-import { UpdateRendDDto }    from './dto/update-rend-d.dto';
-import { CoaService }        from '../coa/coa.service';
-import { ProyectosService }  from '../proyectos/proyectos.service';
-import { ProvService }       from '../prov/prov.service';
-import { NormasService }     from '../normas/normas.service';
+  Injectable,
+  Inject,
+  NotFoundException,
+  ForbiddenException,
+  Logger,
+  BadRequestException,
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { EstadoRendicion } from "@common/enums";
+import { IRendDRepository } from "./repositories/rend-d.repository.interface";
+import { RendMService } from "../rend-m/rend-m.service";
+import { CreateRendDDto } from "./dto/create-rend-d.dto";
+import { UpdateRendDDto } from "./dto/update-rend-d.dto";
+import { CoaService } from "../coa/coa.service";
+import { ProyectosService } from "../proyectos/proyectos.service";
+import { ProvService } from "../prov/prov.service";
+import { NormasService } from "../normas/normas.service";
 
 @Injectable()
 export class RendDService {
   private readonly logger = new Logger(RendDService.name);
 
   constructor(
-    @Inject('REND_D_REPOSITORY')
-    private readonly repo:        IRendDRepository,
+    @Inject("REND_D_REPOSITORY")
+    private readonly repo: IRendDRepository,
     private readonly rendMService: RendMService,
-    private readonly coaService:   CoaService,
+    private readonly coaService: CoaService,
     private readonly proyectosService: ProyectosService,
-    private readonly provService:  ProvService,
+    private readonly provService: ProvService,
     private readonly normasService: NormasService,
-    private readonly config:       ConfigService,
+    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -36,29 +41,35 @@ export class RendDService {
    *   - Usuario sin aprobador con permiso sync (sinAprobador) — para coordinar sync
    */
   private async checkLecturaAccess(
-    cabecera:      { U_IdUsuario: string; U_Estado: number },
-    role:          string,
-    idUsuario:     string,
+    cabecera: { U_IdUsuario: string; U_Estado: number },
+    role: string,
+    idUsuario: string,
     loginUsername: string,
-    esAprobador:   boolean,
-    sinAprobador:  boolean,
+    esAprobador: boolean,
+    sinAprobador: boolean,
   ): Promise<void> {
-    if (role === 'ADMIN') return;
+    if (role === "ADMIN") return;
     if (cabecera.U_IdUsuario === idUsuario) return;
 
     // Aprobador puede ver rendiciones de sus subordinados
     if (esAprobador) {
-      const esSub = await this.rendMService.isSubordinado(cabecera.U_IdUsuario, loginUsername);
+      const esSub = await this.rendMService.isSubordinado(
+        cabecera.U_IdUsuario,
+        loginUsername,
+      );
       if (esSub) return;
     }
 
     // Usuario sin aprobador (nivel final/sync) puede ver rendiciones de sus subordinados
     if (sinAprobador) {
-      const esSub = await this.rendMService.isSubordinado(cabecera.U_IdUsuario, loginUsername);
+      const esSub = await this.rendMService.isSubordinado(
+        cabecera.U_IdUsuario,
+        loginUsername,
+      );
       if (esSub) return;
     }
 
-    throw new ForbiddenException('No tenés acceso a esta rendición');
+    throw new ForbiddenException("No tenés acceso a esta rendición");
   }
 
   /**
@@ -66,60 +77,84 @@ export class RendDService {
    * Solo el propietario en estado ABIERTO, o el aprobador en estado ENVIADO.
    */
   private async checkEscrituraAccess(
-    cabecera:      { U_IdUsuario: string; U_Estado: number },
-    role:          string,
-    idUsuario:     string,
+    cabecera: { U_IdUsuario: string; U_Estado: number },
+    role: string,
+    idUsuario: string,
     loginUsername: string,
-    esAprobador:   boolean,
+    esAprobador: boolean,
   ): Promise<void> {
-    if (role === 'ADMIN') return;
+    if (role === "ADMIN") return;
 
     const esPropietario = cabecera.U_IdUsuario === idUsuario;
 
     if (esPropietario) {
-      if (cabecera.U_Estado !== 1) {
-        throw new ForbiddenException('Solo se pueden modificar documentos de rendiciones en estado ABIERTO');
+      if (cabecera.U_Estado !== EstadoRendicion.ABIERTO) {
+        throw new ForbiddenException(
+          "Solo se pueden modificar documentos de rendiciones en estado ABIERTO",
+        );
       }
       return;
     }
 
     // Aprobador puede editar en ENVIADO (estado 4)
-    if (esAprobador && cabecera.U_Estado === 4) {
-      const esSub = await this.rendMService.isSubordinado(cabecera.U_IdUsuario, loginUsername);
+    if (esAprobador && cabecera.U_Estado === EstadoRendicion.ENVIADO) {
+      const esSub = await this.rendMService.isSubordinado(
+        cabecera.U_IdUsuario,
+        loginUsername,
+      );
       if (esSub) return;
     }
 
-    throw new ForbiddenException('No tenés acceso para modificar esta rendición');
+    throw new ForbiddenException(
+      "No tenés acceso para modificar esta rendición",
+    );
   }
 
   async findByRendicion(
-    idRendicion:   number,
-    role:          string,
-    idUsuario:     string,
-    loginUsername: string  = '',
-    esAprobador:   boolean = false,
-    sinAprobador:  boolean = false,
+    idRendicion: number,
+    role: string,
+    idUsuario: string,
+    loginUsername: string = "",
+    esAprobador: boolean = false,
+    sinAprobador: boolean = false,
   ) {
     const cabecera = await this.rendMService.findOne(idRendicion);
-    await this.checkLecturaAccess(cabecera, role, idUsuario, loginUsername, esAprobador, sinAprobador);
+    await this.checkLecturaAccess(
+      cabecera,
+      role,
+      idUsuario,
+      loginUsername,
+      esAprobador,
+      sinAprobador,
+    );
     const idUsuarioNum = Number(cabecera.U_IdUsuario);
     return this.repo.findByRendicion(idRendicion, idUsuarioNum);
   }
 
   async findOne(
-    idRendicion:   number,
-    idRD:          number,
-    role:          string,
-    idUsuario:     string,
-    loginUsername: string  = '',
-    esAprobador:   boolean = false,
-    sinAprobador:  boolean = false,
+    idRendicion: number,
+    idRD: number,
+    role: string,
+    idUsuario: string,
+    loginUsername: string = "",
+    esAprobador: boolean = false,
+    sinAprobador: boolean = false,
   ) {
     const cabecera = await this.rendMService.findOne(idRendicion);
-    await this.checkLecturaAccess(cabecera, role, idUsuario, loginUsername, esAprobador, sinAprobador);
+    await this.checkLecturaAccess(
+      cabecera,
+      role,
+      idUsuario,
+      loginUsername,
+      esAprobador,
+      sinAprobador,
+    );
     const idUsuarioNum = Number(cabecera.U_IdUsuario);
     const row = await this.repo.findOne(idRendicion, idRD, idUsuarioNum);
-    if (!row) throw new NotFoundException(`Documento ${idRD} no encontrado en rendición ${idRendicion}`);
+    if (!row)
+      throw new NotFoundException(
+        `Documento ${idRD} no encontrado en rendición ${idRendicion}`,
+      );
     return row;
   }
 
@@ -128,10 +163,12 @@ export class RendDService {
    * SOLO en modo OFFLINE: en modo ONLINE los datos vienen de SAP Service Layer
    * y no se usan las tablas locales de maestros.
    */
-  private async validarDatosMaestros(dto: CreateRendDDto | UpdateRendDDto): Promise<void> {
+  private async validarDatosMaestros(
+    dto: CreateRendDDto | UpdateRendDDto,
+  ): Promise<void> {
     // Solo validar en modo OFFLINE (cuando se usan tablas locales)
-    const mode = this.config.get<string>('app.mode', 'ONLINE').toUpperCase();
-    if (mode !== 'OFFLINE') {
+    const mode = this.config.get<string>("app.mode", "ONLINE").toUpperCase();
+    if (mode !== "OFFLINE") {
       return; // En modo ONLINE no validamos contra tablas locales
     }
 
@@ -163,7 +200,7 @@ export class RendDService {
 
     // Validar proveedor si está presente (por código)
     // Nota: Los proveedores eventuales (PL*) no están en la tabla de proveedores regulares
-    if (dto.codProv && !dto.codProv.startsWith('PL')) {
+    if (dto.codProv && !dto.codProv.startsWith("PL")) {
       try {
         const prov = await this.provService.findByCodigo(dto.codProv);
         if (!prov) {
@@ -190,62 +227,90 @@ export class RendDService {
 
     if (errores.length > 0) {
       throw new BadRequestException({
-        message: 'Datos maestros inválidos',
+        message: "Datos maestros inválidos",
         errors: errores,
       });
     }
   }
 
   async create(
-    idRendicion:  number,
-    idUsuario:    number,
-    role:         string,
+    idRendicion: number,
+    idUsuario: number,
+    role: string,
     idUsuarioStr: string,
     loginUsername: string,
-    esAprobador:  boolean,
-    dto:          CreateRendDDto,
+    esAprobador: boolean,
+    dto: CreateRendDDto,
   ) {
     const cabecera = await this.rendMService.findOne(idRendicion);
-    await this.checkEscrituraAccess(cabecera, role, idUsuarioStr, loginUsername, esAprobador);
+    await this.checkEscrituraAccess(
+      cabecera,
+      role,
+      idUsuarioStr,
+      loginUsername,
+      esAprobador,
+    );
 
     // Validar datos maestros antes de crear
     await this.validarDatosMaestros(dto);
 
     const result = await this.repo.create(idRendicion, idUsuario, dto);
-    this.logger.log(`REND_D creado en rendición ${idRendicion} por usuario ${idUsuario}`);
+    this.logger.log(
+      `REND_D creado en rendición ${idRendicion} por usuario ${idUsuario}`,
+    );
     return result;
   }
 
   async update(
-    idRendicion:   number,
-    idRD:          number,
-    dto:           UpdateRendDDto,
-    role:          string,
-    idUsuario:     string,
-    loginUsername: string  = '',
-    esAprobador:   boolean = false,
+    idRendicion: number,
+    idRD: number,
+    dto: UpdateRendDDto,
+    role: string,
+    idUsuario: string,
+    loginUsername: string = "",
+    esAprobador: boolean = false,
   ) {
     const cabecera = await this.rendMService.findOne(idRendicion);
-    await this.checkEscrituraAccess(cabecera, role, idUsuario, loginUsername, esAprobador);
-    
+    await this.checkEscrituraAccess(
+      cabecera,
+      role,
+      idUsuario,
+      loginUsername,
+      esAprobador,
+    );
+
     // Validar datos maestros antes de actualizar
     await this.validarDatosMaestros(dto);
-    
+
     const idUsuarioNum = Number(cabecera.U_IdUsuario);
     await this.repo.update(idRendicion, idRD, idUsuarioNum, dto);
-    return this.findOne(idRendicion, idRD, role, idUsuario, loginUsername, esAprobador, false);
+    return this.findOne(
+      idRendicion,
+      idRD,
+      role,
+      idUsuario,
+      loginUsername,
+      esAprobador,
+      false,
+    );
   }
 
   async remove(
     idRendicion: number,
-    idRD:        number,
-    role:        string,
-    idUsuario:   string,
+    idRD: number,
+    role: string,
+    idUsuario: string,
     loginUsername: string,
     esAprobador: boolean,
   ) {
     const cabecera = await this.rendMService.findOne(idRendicion);
-    await this.checkEscrituraAccess(cabecera, role, idUsuario, loginUsername, esAprobador);
+    await this.checkEscrituraAccess(
+      cabecera,
+      role,
+      idUsuario,
+      loginUsername,
+      esAprobador,
+    );
 
     const idUsuarioNum = Number(cabecera.U_IdUsuario);
     return this.repo.remove(idRendicion, idRD, idUsuarioNum);

@@ -1,10 +1,19 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
-import { ITipoCambioRepository } from './tipo-cambio.repository.interface';
-import { ITipoCambio, ITipoCambioFilter } from '../interfaces/tipo-cambio.interface';
-import { CreateTipoCambioDto, UpdateTipoCambioDto } from '../dto/create-tipo-cambio.dto';
-import { tbl } from '../../../database/db-table.helper';
+import { Injectable, Inject, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import {
+  IDatabaseService,
+  DATABASE_SERVICE,
+} from "../../../database/interfaces/database.interface";
+import { ITipoCambioRepository } from "./tipo-cambio.repository.interface";
+import {
+  ITipoCambio,
+  ITipoCambioFilter,
+} from "../interfaces/tipo-cambio.interface";
+import {
+  CreateTipoCambioDto,
+  UpdateTipoCambioDto,
+} from "../dto/create-tipo-cambio.dto";
+import { tbl } from "../../../database/db-table.helper";
 
 /**
  * Implementación del repositorio de tipos de cambio para SQL Server/PostgreSQL
@@ -15,19 +24,19 @@ export class TipoCambioSqlRepository implements ITipoCambioRepository {
   private readonly logger = new Logger(TipoCambioSqlRepository.name);
 
   private get schema(): string {
-    return this.config.get<string>('hana.schema', 'rend_retail');
+    return this.config.get<string>("hana.schema", "rend_retail");
   }
 
   private get dbType(): string {
-    return this.config.get<string>('app.dbType', 'HANA').toUpperCase();
+    return this.config.get<string>("app.dbType", "HANA").toUpperCase();
   }
 
   private get tableName(): string {
-    return tbl(this.schema, 'REND_TIPO_CAMBIO', this.dbType);
+    return tbl(this.schema, "REND_TIPO_CAMBIO", this.dbType);
   }
 
   private get ph(): string {
-    return this.dbType === 'POSTGRES' ? '$' : '?';
+    return this.dbType === "POSTGRES" ? "$" : "?";
   }
 
   constructor(
@@ -35,7 +44,10 @@ export class TipoCambioSqlRepository implements ITipoCambioRepository {
     private readonly config: ConfigService,
   ) {}
 
-  async findByFechaMoneda(fecha: string, moneda: string): Promise<number | null> {
+  async findByFechaMoneda(
+    fecha: string,
+    moneda: string,
+  ): Promise<number | null> {
     const sql = `
       SELECT "U_Tasa" 
       FROM ${this.tableName} 
@@ -43,9 +55,12 @@ export class TipoCambioSqlRepository implements ITipoCambioRepository {
         AND "U_Moneda" = ${this.ph}2 
         AND "U_Activo" = 'Y'
     `;
-    
+
     try {
-      const result = await this.db.queryOne<{ u_tasa: number }>(sql, [fecha, moneda.toUpperCase()]);
+      const result = await this.db.queryOne<{ u_tasa: number }>(sql, [
+        fecha,
+        moneda.toUpperCase(),
+      ]);
       return result?.u_tasa ?? null;
     } catch (error) {
       this.logger.error(`Error al buscar tipo de cambio: ${error.message}`);
@@ -53,7 +68,10 @@ export class TipoCambioSqlRepository implements ITipoCambioRepository {
     }
   }
 
-  async findByFechaMonedaCompleto(fecha: string, moneda: string): Promise<ITipoCambio | null> {
+  async findByFechaMonedaCompleto(
+    fecha: string,
+    moneda: string,
+  ): Promise<ITipoCambio | null> {
     const sql = `
       SELECT "U_IdTipoCambio", "U_Fecha", "U_Moneda", "U_Tasa", "U_Activo"
       FROM ${this.tableName} 
@@ -61,8 +79,8 @@ export class TipoCambioSqlRepository implements ITipoCambioRepository {
         AND "U_Moneda" = ${this.ph}2 
         AND "U_Activo" = 'Y'
     `;
-    
-    const result = await this.db.queryOne<any>(sql, [fecha, moneda.toUpperCase()]);
+
+    const result = await this.db.queryOne(sql, [fecha, moneda.toUpperCase()]);
     if (!result) return null;
 
     // Mapear de snake_case a camelCase
@@ -79,13 +97,15 @@ export class TipoCambioSqlRepository implements ITipoCambioRepository {
     // Verificar si ya existe
     const exists = await this.exists(data.fecha, data.moneda);
     if (exists) {
-      throw new Error(`DUPLICATE: Ya existe un tipo de cambio para ${data.moneda} en fecha ${data.fecha}`);
+      throw new Error(
+        `DUPLICATE: Ya existe un tipo de cambio para ${data.moneda} en fecha ${data.fecha}`,
+      );
     }
 
     let sql: string;
-    let params: any[];
+    let params: unknown[];
 
-    if (this.dbType === 'POSTGRES') {
+    if (this.dbType === "POSTGRES") {
       sql = `
         INSERT INTO ${this.tableName} 
         ("U_Fecha", "U_Moneda", "U_Tasa", "U_Activo")
@@ -96,7 +116,7 @@ export class TipoCambioSqlRepository implements ITipoCambioRepository {
         data.fecha,
         data.moneda.toUpperCase(),
         data.tasa,
-        data.activo ?? 'Y',
+        data.activo ?? "Y",
       ];
     } else {
       // SQL Server
@@ -110,14 +130,14 @@ export class TipoCambioSqlRepository implements ITipoCambioRepository {
         data.fecha,
         data.moneda.toUpperCase(),
         data.tasa,
-        data.activo ?? 'Y',
+        data.activo ?? "Y",
       ];
     }
 
-    const result = await this.db.queryOne<any>(sql, params);
+    const result = await this.db.queryOne(sql, params);
 
     if (!result) {
-      throw new Error('No se pudo crear el tipo de cambio');
+      throw new Error("No se pudo crear el tipo de cambio");
     }
 
     return {
@@ -131,7 +151,7 @@ export class TipoCambioSqlRepository implements ITipoCambioRepository {
 
   async update(id: number, data: UpdateTipoCambioDto): Promise<ITipoCambio> {
     const fields: string[] = [];
-    const values: any[] = [];
+    const values: unknown[] = [];
     let paramIndex = 1;
 
     if (data.fecha !== undefined) {
@@ -152,15 +172,15 @@ export class TipoCambioSqlRepository implements ITipoCambioRepository {
     }
 
     if (fields.length === 0) {
-      throw new Error('No hay campos para actualizar');
+      throw new Error("No hay campos para actualizar");
     }
 
     let sql: string;
 
-    if (this.dbType === 'POSTGRES') {
+    if (this.dbType === "POSTGRES") {
       sql = `
         UPDATE ${this.tableName} 
-        SET ${fields.join(', ')} 
+        SET ${fields.join(", ")} 
         WHERE "U_IdTipoCambio" = $${paramIndex}
         RETURNING "U_IdTipoCambio", "U_Fecha", "U_Moneda", "U_Tasa", "U_Activo"
       `;
@@ -168,14 +188,14 @@ export class TipoCambioSqlRepository implements ITipoCambioRepository {
       // SQL Server
       sql = `
         UPDATE ${this.tableName} 
-        SET ${fields.join(', ')} 
+        SET ${fields.join(", ")} 
         OUTPUT INSERTED."U_IdTipoCambio", INSERTED."U_Fecha", INSERTED."U_Moneda", INSERTED."U_Tasa", INSERTED."U_Activo"
         WHERE "U_IdTipoCambio" = ?
       `;
     }
     values.push(id);
 
-    const result = await this.db.queryOne<any>(sql, values);
+    const result = await this.db.queryOne(sql, values);
     if (!result) {
       throw new Error(`No se encontró el tipo de cambio con id ${id}`);
     }
@@ -191,7 +211,7 @@ export class TipoCambioSqlRepository implements ITipoCambioRepository {
 
   async findAll(filter?: ITipoCambioFilter): Promise<ITipoCambio[]> {
     let sql = `SELECT "U_IdTipoCambio", "U_Fecha", "U_Moneda", "U_Tasa", "U_Activo" FROM ${this.tableName} WHERE 1=1`;
-    const params: any[] = [];
+    const params: unknown[] = [];
     let paramIndex = 1;
 
     if (filter?.fecha) {
@@ -209,8 +229,8 @@ export class TipoCambioSqlRepository implements ITipoCambioRepository {
 
     sql += ` ORDER BY "U_Fecha" DESC, "U_Moneda"`;
 
-    const results = await this.db.query<any>(sql, params);
-    return results.map(r => ({
+    const results = await this.db.query(sql, params);
+    return results.map((r) => ({
       U_IdTipoCambio: r.u_idtipocambio || r.U_IdTipoCambio,
       U_Fecha: r.u_fecha || r.U_Fecha,
       U_Moneda: r.u_moneda || r.U_Moneda,
@@ -230,7 +250,10 @@ export class TipoCambioSqlRepository implements ITipoCambioRepository {
       FROM ${this.tableName} 
       WHERE "U_Fecha" = ${this.ph}1 AND "U_Moneda" = ${this.ph}2
     `;
-    const result = await this.db.queryOne<{ count: number }>(sql, [fecha, moneda.toUpperCase()]);
+    const result = await this.db.queryOne<{ count: number }>(sql, [
+      fecha,
+      moneda.toUpperCase(),
+    ]);
     return (result?.count ?? 0) > 0;
   }
 }

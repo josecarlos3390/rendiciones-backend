@@ -1,10 +1,10 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { PrctjService } from './prctj.service';
-import { PrctjHanaRepository } from './repositories/prctj.hana.repository';
-import { RendDService } from '../rend-d/rend-d.service';
-import { RendMService } from '../rend-m/rend-m.service';
+import { Test, TestingModule } from "@nestjs/testing";
+import { PrctjService } from "./prctj.service";
+import { PRCTJ_REPOSITORY } from "./repositories/prctj.repository.interface";
+import { RendDService } from "../rend-d/rend-d.service";
+import { RendMService } from "../rend-m/rend-m.service";
 
-describe('PrctjService', () => {
+describe("PrctjService", () => {
   let service: PrctjService;
 
   const mockRepo = {
@@ -27,7 +27,7 @@ describe('PrctjService', () => {
       providers: [
         PrctjService,
         {
-          provide: PrctjHanaRepository,
+          provide: PRCTJ_REPOSITORY,
           useValue: mockRepo,
         },
         {
@@ -44,7 +44,7 @@ describe('PrctjService', () => {
     service = module.get<PrctjService>(PrctjService);
   });
 
-  it('should be defined', () => {
+  it("should be defined", () => {
     expect(service).toBeDefined();
   });
 });

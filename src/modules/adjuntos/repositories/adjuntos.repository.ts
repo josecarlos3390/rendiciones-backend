@@ -2,28 +2,28 @@ import {
   Injectable,
   Inject,
   InternalServerErrorException,
-} from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import {
   IDatabaseService,
   DATABASE_SERVICE,
-} from '@database/interfaces/database.interface';
-import { IAdjuntosRepository } from './adjuntos.repository.interface';
-import { Adjunto, AdjuntoInfo } from '../interfaces/adjunto.interface';
-import { tbl } from '@database/db-table.helper';
+} from "@database/interfaces/database.interface";
+import { IAdjuntosRepository } from "./adjuntos.repository.interface";
+import { Adjunto, AdjuntoInfo } from "../interfaces/adjunto.interface";
+import { tbl } from "@database/db-table.helper";
 
 @Injectable()
 export class AdjuntosRepository implements IAdjuntosRepository {
   private get schema(): string {
-    return this.config.get<string>('hana.schema');
+    return this.config.get<string>("hana.schema");
   }
 
   private get dbType(): string {
-    return this.config.get<string>('app.dbType', 'HANA').toUpperCase();
+    return this.config.get<string>("app.dbType", "HANA").toUpperCase();
   }
 
   private get DB(): string {
-    return tbl(this.schema, 'REND_ADJUNTOS', this.dbType);
+    return tbl(this.schema, "REND_ADJUNTOS", this.dbType);
   }
 
   constructor(
@@ -35,28 +35,28 @@ export class AdjuntosRepository implements IAdjuntosRepository {
   /**
    * Normaliza una fila de BD a AdjuntoInfo (sin datos internos)
    */
-  private normalizeInfo(row: any): AdjuntoInfo {
+  private normalizeInfo(row: Record<string, unknown>): AdjuntoInfo {
     return {
-      id: Number(this.db.col(row, 'ADJ_ID')),
-      idRendicion: Number(this.db.col(row, 'ADJ_ID_RENDICION')),
-      idRD: Number(this.db.col(row, 'ADJ_ID_RD')),
-      nombre: String(this.db.col(row, 'ADJ_NOMBRE')),
-      tipo: String(this.db.col(row, 'ADJ_TIPO') ?? 'application/octet-stream'),
-      tamano: Number(this.db.col(row, 'ADJ_TAMANO') ?? 0),
-      descripcion: this.db.col(row, 'ADJ_DESCRIPCION') || undefined,
-      fecha: new Date(this.db.col(row, 'ADJ_FECHA') ?? Date.now()),
+      id: Number(this.db.col(row, "ADJ_ID")),
+      idRendicion: Number(this.db.col(row, "ADJ_ID_RENDICION")),
+      idRD: Number(this.db.col(row, "ADJ_ID_RD")),
+      nombre: String(this.db.col(row, "ADJ_NOMBRE")),
+      tipo: String(this.db.col(row, "ADJ_TIPO") ?? "application/octet-stream"),
+      tamano: Number(this.db.col(row, "ADJ_TAMANO") ?? 0),
+      descripcion: this.db.col(row, "ADJ_DESCRIPCION") || undefined,
+      fecha: new Date(this.db.col(row, "ADJ_FECHA") ?? Date.now()),
     };
   }
 
   /**
    * Normaliza una fila completa (con datos internos)
    */
-  private normalize(row: any): Adjunto {
+  private normalize(row: Record<string, unknown>): Adjunto {
     return {
       ...this.normalizeInfo(row),
-      idUsuario: String(this.db.col(row, 'ADJ_ID_USUARIO')),
-      nombreSys: String(this.db.col(row, 'ADJ_NOMBRE_SYS')),
-      ruta: String(this.db.col(row, 'ADJ_RUTA')),
+      idUsuario: String(this.db.col(row, "ADJ_ID_USUARIO")),
+      nombreSys: String(this.db.col(row, "ADJ_NOMBRE_SYS")),
+      ruta: String(this.db.col(row, "ADJ_RUTA")),
     };
   }
 
@@ -73,11 +73,11 @@ export class AdjuntosRepository implements IAdjuntosRepository {
         WHERE "ADJ_ID_RENDICION" = ? AND "ADJ_ID_RD" = ?
         ORDER BY "ADJ_FECHA" DESC
       `;
-      const rows = await this.db.query<any>(sql, [idRendicion, idRD]);
+      const rows = await this.db.query(sql, [idRendicion, idRD]);
       return rows.map((r) => this.normalizeInfo(r));
-    } catch (err: any) {
+    } catch (err: unknown) {
       throw new InternalServerErrorException(
-        `Error al consultar adjuntos: ${err.message}`,
+        `Error al consultar adjuntos: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -91,11 +91,11 @@ export class AdjuntosRepository implements IAdjuntosRepository {
         FROM ${this.DB}
         WHERE "ADJ_ID" = ?
       `;
-      const rows = await this.db.query<any>(sql, [id]);
+      const rows = await this.db.query(sql, [id]);
       return rows[0] ? this.normalize(rows[0]) : null;
-    } catch (err: any) {
+    } catch (err: unknown) {
       throw new InternalServerErrorException(
-        `Error al buscar adjunto: ${err.message}`,
+        `Error al buscar adjunto: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -112,7 +112,7 @@ export class AdjuntosRepository implements IAdjuntosRepository {
     descripcion?: string;
   }): Promise<Adjunto> {
     try {
-      if (this.dbType === 'POSTGRES') {
+      if (this.dbType === "POSTGRES") {
         const sql = `
           INSERT INTO ${this.DB} 
           ("ADJ_ID_RENDICION", "ADJ_ID_RD", "ADJ_ID_USUARIO", "ADJ_NOMBRE", 
@@ -120,7 +120,7 @@ export class AdjuntosRepository implements IAdjuntosRepository {
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
           RETURNING "ADJ_ID", "ADJ_FECHA"
         `;
-        const result = await this.db.query<any>(sql, [
+        const result = await this.db.query(sql, [
           data.idRendicion,
           data.idRD,
           data.idUsuario,
@@ -165,7 +165,7 @@ export class AdjuntosRepository implements IAdjuntosRepository {
         ]);
 
         // Obtener el ID generado
-        const idResult = await this.db.query<any>(
+        const idResult = await this.db.query(
           `SELECT MAX("ADJ_ID") as ID FROM ${this.DB} WHERE "ADJ_ID_RENDICION" = ? AND "ADJ_ID_RD" = ?`,
           [data.idRendicion, data.idRD],
         );
@@ -184,9 +184,9 @@ export class AdjuntosRepository implements IAdjuntosRepository {
           fecha: new Date(),
         };
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       throw new InternalServerErrorException(
-        `Error al crear adjunto: ${err.message}`,
+        `Error al crear adjunto: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -196,9 +196,9 @@ export class AdjuntosRepository implements IAdjuntosRepository {
       const sql = `DELETE FROM ${this.DB} WHERE "ADJ_ID" = ?`;
       const result = await this.db.execute(sql, [id]);
       return { affected: result ?? 1 };
-    } catch (err: any) {
+    } catch (err: unknown) {
       throw new InternalServerErrorException(
-        `Error al eliminar adjunto: ${err.message}`,
+        `Error al eliminar adjunto: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -218,11 +218,11 @@ export class AdjuntosRepository implements IAdjuntosRepository {
         WHERE "ADJ_ID_RENDICION" = ?
         ORDER BY "ADJ_ID_RD", "ADJ_FECHA" DESC
       `;
-      const rows = await this.db.query<any>(sql, [idRendicion]);
+      const rows = await this.db.query(sql, [idRendicion]);
       return rows.map((r) => this.normalize(r));
-    } catch (err: any) {
+    } catch (err: unknown) {
       throw new InternalServerErrorException(
-        `Error al buscar adjuntos de la rendición: ${err.message}`,
+        `Error al buscar adjuntos de la rendición: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }

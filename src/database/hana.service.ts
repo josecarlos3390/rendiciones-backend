@@ -1,7 +1,12 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import * as hana from '@sap/hana-client';
-import { IDatabaseService } from './interfaces/database.interface';
+import {
+  Injectable,
+  OnModuleInit,
+  OnModuleDestroy,
+  Logger,
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import * as hana from "@sap/hana-client";
+import { IDatabaseService } from "./interfaces/database.interface";
 
 /** El driver no exporta Pool como tipo — lo declaramos nosotros */
 interface HanaPool {
@@ -20,7 +25,9 @@ interface HanaPool {
  *  - col() ahora es método de instancia (el static se mantiene por compatibilidad)
  */
 @Injectable()
-export class HanaService implements IDatabaseService, OnModuleInit, OnModuleDestroy {
+export class HanaService
+  implements IDatabaseService, OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(HanaService.name);
   private pool: HanaPool;
 
@@ -34,10 +41,12 @@ export class HanaService implements IDatabaseService, OnModuleInit, OnModuleDest
   private poolReady = false;
 
   async onModuleInit() {
-    const dbType = this.configService.get<string>('app.dbType', 'HANA').toUpperCase();
-    if (dbType !== 'HANA' || this.poolReady) return;
+    const dbType = this.configService
+      .get<string>("app.dbType", "HANA")
+      .toUpperCase();
+    if (dbType !== "HANA" || this.poolReady) return;
     this.poolReady = true;
-    this.logger.log('Motor de base de datos activo: HANA');
+    this.logger.log("Motor de base de datos activo: HANA");
     this.createPool();
     void this.checkConnectivity();
   }
@@ -50,30 +59,34 @@ export class HanaService implements IDatabaseService, OnModuleInit, OnModuleDest
 
   private createPool(): void {
     const connParams = {
-      serverNode:             `${this.configService.get('hana.host')}:${this.configService.get('hana.port')}`,
-      uid:                    this.configService.get('hana.user'),
-      pwd:                    this.configService.get('hana.password'),
-      currentSchema:          this.configService.get('hana.schema'),
-      encrypt:                this.configService.get('hana.encrypt'),
-      sslValidateCertificate: this.configService.get('hana.sslValidateCertificate'),
+      serverNode: `${this.configService.get("hana.host")}:${this.configService.get("hana.port")}`,
+      uid: this.configService.get("hana.user"),
+      pwd: this.configService.get("hana.password"),
+      currentSchema: this.configService.get("hana.schema"),
+      encrypt: this.configService.get("hana.encrypt"),
+      sslValidateCertificate: this.configService.get(
+        "hana.sslValidateCertificate",
+      ),
     };
 
     this.pool = (hana as any).createPool(connParams, {
-      min:            this.POOL_MIN,
-      max:            this.POOL_MAX,
+      min: this.POOL_MIN,
+      max: this.POOL_MAX,
       requestTimeout: 10_000,
-      idleTimeout:    60_000,
+      idleTimeout: 60_000,
     });
 
-    this.logger.log(`Pool HANA creado (min: ${this.POOL_MIN}, max: ${this.POOL_MAX})`);
+    this.logger.log(
+      `Pool HANA creado (min: ${this.POOL_MIN}, max: ${this.POOL_MAX})`,
+    );
   }
 
   private async destroyPool(): Promise<void> {
     if (!this.pool) return;
     return new Promise((resolve) => {
       this.pool.clear((err) => {
-        if (err) this.logger.error('Error al cerrar el pool HANA', err);
-        else     this.logger.log('Pool HANA cerrado');
+        if (err) this.logger.error("Error al cerrar el pool HANA", err);
+        else this.logger.log("Pool HANA cerrado");
         resolve();
       });
     });
@@ -81,10 +94,12 @@ export class HanaService implements IDatabaseService, OnModuleInit, OnModuleDest
 
   private async checkConnectivity(): Promise<void> {
     try {
-      await this.query('SELECT 1 FROM DUMMY');
-      this.logger.log('Conectividad con SAP HANA verificada');
-    } catch (err: any) {
-      this.logger.warn(`SAP HANA no disponible al iniciar: ${err.message}. Se reintentará en cada query.`);
+      await this.query("SELECT 1 FROM DUMMY");
+      this.logger.log("Conectividad con SAP HANA verificada");
+    } catch (err: unknown) {
+      this.logger.warn(
+        `SAP HANA no disponible al iniciar: ${err instanceof Error ? err.message : String(err)}. Se reintentará en cada query.`,
+      );
     }
   }
 
@@ -92,7 +107,7 @@ export class HanaService implements IDatabaseService, OnModuleInit, OnModuleDest
     return new Promise((resolve, reject) => {
       this.pool.getConnection((err, conn) => {
         if (err) reject(err);
-        else     resolve(conn);
+        else resolve(conn);
       });
     });
   }
@@ -110,35 +125,35 @@ export class HanaService implements IDatabaseService, OnModuleInit, OnModuleDest
   // ── IDatabaseService ─────────────────────────────────────────────────────────
 
   /** SELECT — itera con next() para evitar el error -20042 en result sets vacíos */
-  async query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+  async query<T = any>(sql: string, params: unknown[] = []): Promise<T[]> {
     const conn = await this.getConnection();
-    let rs: any = null;
-    
+    let rs: unknown = null;
+
     try {
       return await new Promise<T[]>((resolve, reject) => {
         const stmt = conn.prepare(sql);
-        stmt.execQuery(params, (err, resultSet: any) => {
-          if (err) { 
-            this.logger.error(`Query error: ${sql}`, err); 
-            return reject(err); 
+        stmt.execQuery(params, (err, resultSet: unknown) => {
+          if (err) {
+            this.logger.error(`Query error: ${sql}`, err);
+            return reject(err);
           }
-          
+
           rs = resultSet;
           const rows: T[] = [];
-          
+
           const fetchNext = () => {
-            rs.next((err2: any, hasRow: boolean) => {
-              if (err2) { 
-                this.logger.error(`rs.next error`, err2); 
-                return reject(err2); 
+            (rs as any).next((err2: any, hasRow: boolean) => {
+              if (err2) {
+                this.logger.error(`rs.next error`, err2);
+                return reject(err2);
               }
-              if (!hasRow) { 
-                return resolve(rows); 
+              if (!hasRow) {
+                return resolve(rows);
               }
-              rs.getValues((err3: any, values: any) => {
-                if (err3) { 
-                  this.logger.error(`getValues error`, err3); 
-                  return reject(err3); 
+              (rs as any).getValues((err3: any, values: any) => {
+                if (err3) {
+                  this.logger.error(`getValues error`, err3);
+                  return reject(err3);
                 }
                 rows.push(values as T);
                 fetchNext();
@@ -152,10 +167,10 @@ export class HanaService implements IDatabaseService, OnModuleInit, OnModuleDest
       // Asegurar que el result set siempre se cierre
       if (rs) {
         try {
-          rs.close();
+          (rs as any).close();
         } catch (err) {
           // Ignorar errores al cerrar result set
-          this.logger.debug('Error al cerrar result set (ignorado)', err);
+          this.logger.debug("Error al cerrar result set (ignorado)", err);
         }
       }
       this.releaseConnection(conn);
@@ -163,19 +178,25 @@ export class HanaService implements IDatabaseService, OnModuleInit, OnModuleDest
   }
 
   /** SELECT — retorna la primera fila o null */
-  async queryOne<T = any>(sql: string, params: any[] = []): Promise<T | null> {
+  async queryOne<T = any>(
+    sql: string,
+    params: unknown[] = [],
+  ): Promise<T | null> {
     const rows = await this.query<T>(sql, params);
     return rows[0] ?? null;
   }
 
   /** INSERT / UPDATE / DELETE — retorna filas afectadas */
-  async execute(sql: string, params: any[] = []): Promise<number> {
+  async execute(sql: string, params: unknown[] = []): Promise<number> {
     const conn = await this.getConnection();
     try {
       return await new Promise<number>((resolve, reject) => {
         const stmt = conn.prepare(sql);
-        stmt.exec(params, (err: any, affected: any) => {
-          if (err) { this.logger.error(`Execute error: ${sql}`, err); return reject(err); }
+        stmt.exec(params, (err: unknown, affected: unknown) => {
+          if (err) {
+            this.logger.error(`Execute error: ${sql}`, err);
+            return reject(err);
+          }
           resolve(affected as number);
         });
       });
@@ -188,19 +209,24 @@ export class HanaService implements IDatabaseService, OnModuleInit, OnModuleDest
    * Transacción atómica — usa una sola conexión del pool durante toda
    * la transacción para garantizar el mismo contexto transaccional.
    */
-  async transaction<T>(operations: (tx: IDatabaseService) => Promise<T>): Promise<T> {
+  async transaction<T>(
+    operations: (tx: IDatabaseService) => Promise<T>,
+  ): Promise<T> {
     const conn = await this.getConnection();
-    const tx   = this.buildTransactionProxy(conn);
+    const tx = this.buildTransactionProxy(conn);
 
     try {
-      await this.execOnConn(conn, 'SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+      await this.execOnConn(
+        conn,
+        "SET TRANSACTION ISOLATION LEVEL READ COMMITTED",
+      );
       const result = await operations(tx);
-      await this.execOnConn(conn, 'COMMIT');
-      this.logger.debug('Transacción HANA: COMMIT');
+      await this.execOnConn(conn, "COMMIT");
+      this.logger.debug("Transacción HANA: COMMIT");
       return result;
     } catch (err) {
-      await this.execOnConn(conn, 'ROLLBACK').catch(() => {});
-      this.logger.error('Transacción HANA: ROLLBACK', err);
+      await this.execOnConn(conn, "ROLLBACK").catch(() => {});
+      this.logger.error("Transacción HANA: ROLLBACK", err);
       throw err;
     } finally {
       this.releaseConnection(conn);
@@ -212,7 +238,7 @@ export class HanaService implements IDatabaseService, OnModuleInit, OnModuleDest
   }
 
   /** Método de instancia requerido por IDatabaseService */
-  col(row: Record<string, any>, name: string): any {
+  col(row: Record<string, unknown>, name: string): any {
     return HanaService.col(row, name);
   }
 
@@ -221,7 +247,7 @@ export class HanaService implements IDatabaseService, OnModuleInit, OnModuleDest
    * nombres en la capitalización original, mayúsculas o minúsculas.
    * @deprecated Usar db.col() — se mantiene por compatibilidad con código existente
    */
-  static col(row: any, name: string): any {
+  static col(row: Record<string, unknown>, name: string): any {
     return row[name] ?? row[name.toUpperCase()] ?? row[name.toLowerCase()];
   }
 
@@ -230,9 +256,9 @@ export class HanaService implements IDatabaseService, OnModuleInit, OnModuleDest
   private execOnConn(conn: hana.Connection, sql: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const stmt = conn.prepare(sql);
-      stmt.exec([], (err: any) => {
+      stmt.exec([], (err: unknown) => {
         if (err) reject(err);
-        else     resolve();
+        else resolve();
       });
     });
   }
@@ -244,41 +270,44 @@ export class HanaService implements IDatabaseService, OnModuleInit, OnModuleDest
   private buildTransactionProxy(conn: hana.Connection): IDatabaseService {
     const logger = this.logger;
 
-    const queryOnConn = <T>(sql: string, params: any[] = []): Promise<T[]> =>
+    const queryOnConn = <T>(
+      sql: string,
+      params: unknown[] = [],
+    ): Promise<T[]> =>
       new Promise((resolve, reject) => {
-        let rs: any = null;
-        
+        let rs: unknown = null;
+
         const cleanup = () => {
           if (rs) {
             try {
-              rs.close();
+              (rs as any).close();
             } catch {
               // Ignorar errores al cerrar
             }
           }
         };
-        
+
         const stmt = conn.prepare(sql);
         stmt.execQuery(params, (err, resultSet: any) => {
-          if (err) { 
-            logger.error(`[tx] Query error: ${sql}`, err); 
-            return reject(err); 
+          if (err) {
+            logger.error(`[tx] Query error: ${sql}`, err);
+            return reject(err);
           }
-          
+
           rs = resultSet;
           const rows: T[] = [];
-          
+
           const fetchNext = () => {
-            rs.next((err2: any, hasRow: boolean) => {
+            (rs as any).next((err2: any, hasRow: boolean) => {
               if (err2) {
                 cleanup();
                 return reject(err2);
               }
-              if (!hasRow) { 
+              if (!hasRow) {
                 cleanup();
-                return resolve(rows); 
+                return resolve(rows);
               }
-              rs.getValues((err3: any, values: any) => {
+              (rs as any).getValues((err3: any, values: any) => {
                 if (err3) {
                   cleanup();
                   return reject(err3);
@@ -293,26 +322,31 @@ export class HanaService implements IDatabaseService, OnModuleInit, OnModuleDest
       });
 
     return {
-      query:       queryOnConn,
-      queryOne:    async <T>(sql: string, params: any[] = []) => (await queryOnConn<T>(sql, params))[0] ?? null,
-      execute:     (sql: string, params: any[] = []) =>
+      query: queryOnConn,
+      queryOne: async <T>(sql: string, params: any[] = []) =>
+        (await queryOnConn<T>(sql, params))[0] ?? null,
+      execute: (sql: string, params: any[] = []) =>
         new Promise((resolve, reject) => {
           const stmt = conn.prepare(sql);
           stmt.exec(params, (err: any, affected: any) => {
-            if (err) { logger.error(`[tx] Execute error: ${sql}`, err); return reject(err); }
+            if (err) {
+              logger.error(`[tx] Execute error: ${sql}`, err);
+              return reject(err);
+            }
             resolve(affected as number);
           });
         }),
-      transaction: () => Promise.reject(new Error('No se pueden anidar transacciones en HANA')),
+      transaction: () =>
+        Promise.reject(new Error("No se pueden anidar transacciones en HANA")),
       isConnected: () => true,
-      col:         (row, name) => HanaService.col(row, name),
+      col: (row, name) => HanaService.col(row, name),
     };
   }
 
   // ── Stored Procedures (específico HANA) ──────────────────────────────────────
 
   async callProcedure(name: string, params: any[] = []): Promise<any> {
-    const sql = `CALL ${name}(${params.map(() => '?').join(', ')})`;
+    const sql = `CALL ${name}(${params.map(() => "?").join(", ")})`;
     return this.query(sql, params);
   }
 }

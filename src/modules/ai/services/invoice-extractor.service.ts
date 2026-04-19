@@ -1,12 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { v4 as uuidv4 } from 'uuid';
-import { ClaudeService } from './claude.service';
-import { PdfProcessorService } from './pdf-processor.service';
-import { AiConfigService } from './ai-config.service';
+import { Injectable, Logger } from "@nestjs/common";
+import { v4 as uuidv4 } from "uuid";
+import { ClaudeService } from "./claude.service";
+import { PdfProcessorService } from "./pdf-processor.service";
+import { AiConfigService } from "./ai-config.service";
 import {
   PdfProcessingResult,
   InvoiceData,
-} from '../interfaces/pdf-result.interface';
+} from "../interfaces/pdf-result.interface";
 
 @Injectable()
 export class InvoiceExtractorService {
@@ -32,8 +32,8 @@ export class InvoiceExtractorService {
     const result: PdfProcessingResult = {
       id,
       filename,
-      status: 'processing',
-      source: 'ai_claude',
+      status: "processing",
+      source: "ai_claude",
       confidence: 0,
       data: {},
       warnings: [],
@@ -45,7 +45,7 @@ export class InvoiceExtractorService {
 
       // Verificar si tenemos IA habilitada
       if (!this.config.enabled) {
-        throw new Error('IA no está habilitada');
+        throw new Error("IA no está habilitada");
       }
 
       // Obtener info del PDF
@@ -56,7 +56,9 @@ export class InvoiceExtractorService {
 
       // Estrategia 1: Intentar extraer texto y procesar con Claude
       if (pdfInfo.hasText) {
-        this.logger.log('PDF tiene texto seleccionable, usando Claude con texto');
+        this.logger.log(
+          "PDF tiene texto seleccionable, usando Claude con texto",
+        );
         const text = await this.pdfProcessor.extractText(buffer);
         extractionResult = await this.claudeService.extractInvoiceData(
           text,
@@ -65,9 +67,10 @@ export class InvoiceExtractorService {
       }
       // Estrategia 2: Convertir a imagen y usar Claude Vision
       else {
-        this.logger.log('PDF no tiene texto, convirtiendo a imagen...');
+        this.logger.log("PDF no tiene texto, convirtiendo a imagen...");
         const base64Image = await this.pdfProcessor.convertToImage(buffer);
-        const optimizedImage = await this.pdfProcessor.optimizeImage(base64Image);
+        const optimizedImage =
+          await this.pdfProcessor.optimizeImage(base64Image);
         extractionResult = await this.claudeService.extractInvoiceFromImage(
           optimizedImage,
           filename,
@@ -78,7 +81,7 @@ export class InvoiceExtractorService {
       result.data = extractionResult.data;
       result.confidence = extractionResult.confidence;
       result.warnings = this.validateInvoiceData(extractionResult.data);
-      result.status = 'completed';
+      result.status = "completed";
       result.completedAt = new Date();
 
       this.logger.log(
@@ -86,10 +89,13 @@ export class InvoiceExtractorService {
       );
 
       return result;
-    } catch (error: any) {
-      this.logger.error(`Error procesando ${filename}: ${error.message}`);
-      result.status = 'error';
-      result.errorMessage = error.message;
+    } catch (error: unknown) {
+      this.logger.error(
+        `Error procesando ${filename}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      result.status = "error";
+      result.errorMessage =
+        error instanceof Error ? error.message : String(error);
       result.completedAt = new Date();
       return result;
     }
@@ -110,8 +116,8 @@ export class InvoiceExtractorService {
       results.push(result);
     }
 
-    const completed = results.filter((r) => r.status === 'completed').length;
-    const errors = results.filter((r) => r.status === 'error').length;
+    const completed = results.filter((r) => r.status === "completed").length;
+    const errors = results.filter((r) => r.status === "error").length;
 
     this.logger.log(
       `Batch completado: ${completed} exitosos, ${errors} errores`,
@@ -127,22 +133,22 @@ export class InvoiceExtractorService {
     const warnings: string[] = [];
 
     if (!data.nit) {
-      warnings.push('NIT no detectado');
+      warnings.push("NIT no detectado");
     }
     if (!data.razonSocial) {
-      warnings.push('Razón social no detectada');
+      warnings.push("Razón social no detectada");
     }
     if (!data.numeroFactura) {
-      warnings.push('Número de factura no detectado');
+      warnings.push("Número de factura no detectado");
     }
     if (!data.fecha) {
-      warnings.push('Fecha no detectada');
+      warnings.push("Fecha no detectada");
     }
     if (!data.monto || data.monto <= 0) {
-      warnings.push('Monto no detectado o inválido');
+      warnings.push("Monto no detectado o inválido");
     }
     if (!data.concepto) {
-      warnings.push('Concepto no detectado');
+      warnings.push("Concepto no detectado");
     }
 
     return warnings;
@@ -151,9 +157,9 @@ export class InvoiceExtractorService {
   /**
    * Calcula el nivel de confianza general del resultado
    */
-  calculateConfidenceLevel(confidence: number): 'high' | 'medium' | 'low' {
-    if (confidence >= 0.85) return 'high';
-    if (confidence >= 0.6) return 'medium';
-    return 'low';
+  calculateConfidenceLevel(confidence: number): "high" | "medium" | "low" {
+    if (confidence >= 0.85) return "high";
+    if (confidence >= 0.6) return "medium";
+    return "low";
   }
 }

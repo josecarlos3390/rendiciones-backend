@@ -1,11 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { AiConfigService } from './ai-config.service';
-import { AppModeService } from './app-mode.service';
-import { ClaudeService } from './claude.service';
+import { Injectable, Logger } from "@nestjs/common";
+import { AiConfigService } from "./ai-config.service";
+import { AppModeService } from "./app-mode.service";
+import { ClaudeService } from "./claude.service";
 import {
   AnalisisRendicionResponse,
   AnalisisContext,
-} from '../interfaces/analisis-rendicion.interface';
+} from "../interfaces/analisis-rendicion.interface";
 
 /**
  * Servicio para analizar rendiciones y asistir a aprobadores
@@ -32,14 +32,20 @@ export class AnalisisRendicionService {
   ): Promise<AnalisisRendicionResponse> {
     // Verificar que IA esté habilitada
     if (!this.aiConfig.enabled) {
-      throw new Error('Las funcionalidades de IA no están habilitadas');
+      throw new Error("Las funcionalidades de IA no están habilitadas");
     }
 
     const esOnline = this.appMode.isOnline;
-    this.logger.log(`Analizando rendición ${idRendicion} en modo ${esOnline ? 'ONLINE' : 'OFFLINE'}`);
+    this.logger.log(
+      `Analizando rendición ${idRendicion} en modo ${esOnline ? "ONLINE" : "OFFLINE"}`,
+    );
 
     // Obtener datos del contexto
-    const contexto = await this.obtenerContextoAnalisis(idRendicion, usuarioId, esOnline);
+    const contexto = await this.obtenerContextoAnalisis(
+      idRendicion,
+      usuarioId,
+      esOnline,
+    );
 
     // Realizar análisis con Claude
     const analisisIA = await this.claudeService.analizarRendicion(contexto);
@@ -47,26 +53,33 @@ export class AnalisisRendicionService {
     // Construir respuesta
     const response: AnalisisRendicionResponse = {
       idRendicion,
-      modo: esOnline ? 'ONLINE' : 'OFFLINE',
+      modo: esOnline ? "ONLINE" : "OFFLINE",
       scoreRiesgo: analisisIA.scoreRiesgo,
       nivel: analisisIA.nivel,
       recomendacion: analisisIA.recomendacion,
       justificacion: analisisIA.justificacion,
       factoresPositivos: analisisIA.factoresPositivos,
       factoresRiesgo: analisisIA.factoresRiesgo,
-      analisisSolicitante: contexto.historial.length > 0
-        ? this.calcularStatsSolicitante(contexto.solicitante, contexto.historial)
-        : {
-            nombre: contexto.solicitante.nombre,
-            rendicionesPrevias: 0,
-            tasaAprobacion: 0,
-            montoPromedio: 0,
-            antiguedadMeses: this.calcularAntiguedad(contexto.solicitante.fechaRegistro),
-          },
+      analisisSolicitante:
+        contexto.historial.length > 0
+          ? this.calcularStatsSolicitante(
+              contexto.solicitante,
+              contexto.historial,
+            )
+          : {
+              nombre: contexto.solicitante.nombre,
+              rendicionesPrevias: 0,
+              tasaAprobacion: 0,
+              montoPromedio: 0,
+              antiguedadMeses: this.calcularAntiguedad(
+                contexto.solicitante.fechaRegistro,
+              ),
+            },
       analisisMontos: {
         montoActual: contexto.rendicion.monto,
         montoPromedioUsuario: this.calcularMontoPromedio(contexto.historial),
-        montoPromedioDepartamento: contexto.statsDepartamento?.montoPromedio || 0,
+        montoPromedioDepartamento:
+          contexto.statsDepartamento?.montoPromedio || 0,
         variacionPorcentaje: 0,
         esAnormal: false,
       },
@@ -78,7 +91,8 @@ export class AnalisisRendicionService {
     // Calcular variación porcentaje
     if (response.analisisMontos.montoPromedioUsuario > 0) {
       response.analisisMontos.variacionPorcentaje = Math.round(
-        ((response.analisisMontos.montoActual - response.analisisMontos.montoPromedioUsuario) /
+        ((response.analisisMontos.montoActual -
+          response.analisisMontos.montoPromedioUsuario) /
           response.analisisMontos.montoPromedioUsuario) *
           100,
       );
@@ -92,7 +106,8 @@ export class AnalisisRendicionService {
     if (contexto.facturas.length > 0) {
       response.analisisFacturas = {
         totalFacturas: contexto.facturas.length,
-        facturasValidadas: contexto.facturas.filter((f) => f.validadoSiat).length,
+        facturasValidadas: contexto.facturas.filter((f) => f.validadoSiat)
+          .length,
         facturasConDiscrepancia: 0, // Se calcularía con validación SIAT real
         facturasSospechosas: contexto.facturas.filter(
           (f) => f.monto > 10000 || !f.cuf,
@@ -100,7 +115,9 @@ export class AnalisisRendicionService {
       };
     }
 
-    this.logger.log(`Análisis completado: Score ${response.scoreRiesgo}, Nivel ${response.nivel}`);
+    this.logger.log(
+      `Análisis completado: Score ${response.scoreRiesgo}, Nivel ${response.nivel}`,
+    );
 
     return response;
   }
@@ -124,38 +141,53 @@ export class AnalisisRendicionService {
       rendicion: {
         monto: 3500,
         fecha: new Date().toISOString(),
-        estado: 'PENDIENTE',
-        descripcion: 'Gastos de viaje a Santa Cruz',
+        estado: "PENDIENTE",
+        descripcion: "Gastos de viaje a Santa Cruz",
       },
       solicitante: {
-        id: usuarioId || '123',
-        nombre: 'Juan Pérez',
-        departamento: 'Comercial',
+        id: usuarioId || "123",
+        nombre: "Juan Pérez",
+        departamento: "Comercial",
         fechaRegistro: fechaBase.toISOString(),
       },
       historial: [
-        { idRendicion: 1, monto: 2800, estado: 'APROBADA', fecha: '2026-01-15' },
-        { idRendicion: 2, monto: 1500, estado: 'APROBADA', fecha: '2026-02-10' },
-        { idRendicion: 3, monto: 4200, estado: 'APROBADA', fecha: '2026-03-05' },
+        {
+          idRendicion: 1,
+          monto: 2800,
+          estado: "APROBADA",
+          fecha: "2026-01-15",
+        },
+        {
+          idRendicion: 2,
+          monto: 1500,
+          estado: "APROBADA",
+          fecha: "2026-02-10",
+        },
+        {
+          idRendicion: 3,
+          monto: 4200,
+          estado: "APROBADA",
+          fecha: "2026-03-05",
+        },
       ],
       facturas: [
         {
-          nit: '123456789',
-          proveedor: 'Aerolínea BOA',
+          nit: "123456789",
+          proveedor: "Aerolínea BOA",
           monto: 2500,
-          cuf: 'A1B2C3D4E5F6',
+          cuf: "A1B2C3D4E5F6",
           validadoSiat: true,
         },
         {
-          nit: '987654321',
-          proveedor: 'Hotel Camino Real',
+          nit: "987654321",
+          proveedor: "Hotel Camino Real",
           monto: 800,
-          cuf: 'F6E5D4C3B2A1',
+          cuf: "F6E5D4C3B2A1",
           validadoSiat: true,
         },
         {
-          nit: '555555555',
-          proveedor: 'Restaurant El Fogón',
+          nit: "555555555",
+          proveedor: "Restaurant El Fogón",
           monto: 200,
           cuf: undefined,
           validadoSiat: false,
@@ -173,8 +205,8 @@ export class AnalisisRendicionService {
    * Calcula estadísticas del solicitante
    */
   private calcularStatsSolicitante(
-    solicitante: any,
-    historial: any[],
+    solicitante: { nombre: string; fechaRegistro: string },
+    historial: Array<{ estado: string; monto: number }>,
   ): {
     nombre: string;
     rendicionesPrevias: number;
@@ -182,14 +214,18 @@ export class AnalisisRendicionService {
     montoPromedio: number;
     antiguedadMeses: number;
   } {
-    const aprobadas = historial.filter((h) => h.estado === 'APROBADA').length;
+    const aprobadas = historial.filter((h) => h.estado === "APROBADA").length;
     const montoTotal = historial.reduce((sum, h) => sum + h.monto, 0);
 
     return {
       nombre: solicitante.nombre,
       rendicionesPrevias: historial.length,
-      tasaAprobacion: historial.length > 0 ? Math.round((aprobadas / historial.length) * 100) : 0,
-      montoPromedio: historial.length > 0 ? Math.round(montoTotal / historial.length) : 0,
+      tasaAprobacion:
+        historial.length > 0
+          ? Math.round((aprobadas / historial.length) * 100)
+          : 0,
+      montoPromedio:
+        historial.length > 0 ? Math.round(montoTotal / historial.length) : 0,
       antiguedadMeses: this.calcularAntiguedad(solicitante.fechaRegistro),
     };
   }
@@ -207,7 +243,7 @@ export class AnalisisRendicionService {
   /**
    * Calcula el monto promedio del historial
    */
-  private calcularMontoPromedio(historial: any[]): number {
+  private calcularMontoPromedio(historial: Array<{ monto: number }>): number {
     if (historial.length === 0) return 0;
     const total = historial.reduce((sum, h) => sum + h.monto, 0);
     return Math.round(total / historial.length);

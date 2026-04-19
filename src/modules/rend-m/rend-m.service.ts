@@ -1,19 +1,24 @@
 import {
-  Injectable, Inject, NotFoundException,
-  ForbiddenException, BadRequestException, Logger,
-} from '@nestjs/common';
-import { IRendMRepository } from './repositories/rend-m.repository.interface';
-import { CreateRendMDto }   from './dto/create-rend-m.dto';
-import { UpdateRendMDto }   from './dto/update-rend-m.dto';
-import { PaginationDto }    from '../../common/dto/pagination.dto';
-import { AdjuntosService } from '../adjuntos/adjuntos.service';
+  Injectable,
+  Inject,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+  Logger,
+} from "@nestjs/common";
+import { EstadoRendicion } from "@common/enums";
+import { IRendMRepository } from "./repositories/rend-m.repository.interface";
+import { CreateRendMDto } from "./dto/create-rend-m.dto";
+import { UpdateRendMDto } from "./dto/update-rend-m.dto";
+import { PaginationDto } from "@common/dto/pagination.dto";
+import { AdjuntosService } from "../adjuntos/adjuntos.service";
 
 @Injectable()
 export class RendMService {
   private readonly logger = new Logger(RendMService.name);
 
   constructor(
-    @Inject('REND_M_REPOSITORY')
+    @Inject("REND_M_REPOSITORY")
     private readonly repo: IRendMRepository,
     private readonly adjuntosService: AdjuntosService,
   ) {}
@@ -26,7 +31,7 @@ export class RendMService {
     pagination: PaginationDto,
     estados?: number[],
   ) {
-    const page  = pagination.page  ?? 1;
+    const page = pagination.page ?? 1;
     const limit = pagination.limit ?? 50;
     return this.repo.findByUser(idUsuario, idPerfil, page, limit, estados);
   }
@@ -37,71 +42,95 @@ export class RendMService {
    * Si estados vacío → todos los estados.
    */
   async findSubordinados(
-    loginAprobador:   string,
-    idPerfil:         number | undefined,
-    estados:          number[],
-    page:             number,
-    limit:            number,
+    loginAprobador: string,
+    idPerfil: number | undefined,
+    estados: number[],
+    page: number,
+    limit: number,
     idUsuarioFiltro?: string,
-    cascada:          boolean = false,
+    cascada: boolean = false,
   ) {
-    return this.repo.findBySubordinados(loginAprobador, idPerfil, estados, page, limit, idUsuarioFiltro, cascada);
+    return this.repo.findBySubordinados(
+      loginAprobador,
+      idPerfil,
+      estados,
+      page,
+      limit,
+      idUsuarioFiltro,
+      cascada,
+    );
   }
 
   async findOne(id: number) {
     const row = await this.repo.findOne(id);
-    if (!row) throw new NotFoundException(`Rendición con ID ${id} no encontrada`);
+    if (!row)
+      throw new NotFoundException(`Rendición con ID ${id} no encontrada`);
     return row;
   }
 
   async create(
-    dto:          CreateRendMDto,
-    idUsuario:    string,
-    nomUsuario:   string,
+    dto: CreateRendMDto,
+    idUsuario: string,
+    nomUsuario: string,
     nombrePerfil: string,
   ) {
     // Si la cuenta es ASOCIADA, empleado y nombreEmpleado son obligatorios
-    if (dto.cuentaAsociada === 'Y') {
+    if (dto.cuentaAsociada === "Y") {
       if (!dto.empleado?.trim()) {
-        throw new BadRequestException('El campo empleado es obligatorio para cuentas asociadas');
+        throw new BadRequestException(
+          "El campo empleado es obligatorio para cuentas asociadas",
+        );
       }
       if (!dto.nombreEmpleado?.trim()) {
-        throw new BadRequestException('El campo nombreEmpleado es obligatorio para cuentas asociadas');
+        throw new BadRequestException(
+          "El campo nombreEmpleado es obligatorio para cuentas asociadas",
+        );
       }
     }
     return this.repo.create(dto, idUsuario, nomUsuario, nombrePerfil);
   }
 
   async update(
-    id:              number,
-    dto:             UpdateRendMDto,
-    role:            string,
-    idUsuario:       string,
+    id: number,
+    dto: UpdateRendMDto,
+    role: string,
+    idUsuario: string,
     loginAprobador?: string,
-    esAprobador?:    boolean,
+    esAprobador?: boolean,
   ) {
     const row = await this.findOne(id);
 
-    if (role !== 'ADMIN') {
+    if (role !== "ADMIN") {
       const esPropietario = row.U_IdUsuario === idUsuario;
 
       if (esPropietario) {
         // Dueño solo puede editar sus propias en estado ABIERTO
-        if (row.U_Estado !== 1) {
-          throw new ForbiddenException('Solo se pueden editar rendiciones en estado ABIERTO');
+        if (row.U_Estado !== EstadoRendicion.ABIERTO) {
+          throw new ForbiddenException(
+            "Solo se pueden editar rendiciones en estado ABIERTO",
+          );
         }
       } else if (esAprobador && loginAprobador) {
         // Aprobador puede editar rendiciones de sus subordinados en estado ENVIADO (4)
-        if (row.U_Estado !== 4) {
-          throw new ForbiddenException('El aprobador solo puede editar rendiciones en estado ENVIADO');
+        if (row.U_Estado !== EstadoRendicion.ENVIADO) {
+          throw new ForbiddenException(
+            "El aprobador solo puede editar rendiciones en estado ENVIADO",
+          );
         }
         // Validar que el dueño de la rendición efectivamente lo tiene como aprobador
-        const esSubordinado = await this.repo.isSubordinado(row.U_IdUsuario, loginAprobador);
+        const esSubordinado = await this.repo.isSubordinado(
+          row.U_IdUsuario,
+          loginAprobador,
+        );
         if (!esSubordinado) {
-          throw new ForbiddenException('No tenés permiso para editar rendiciones de este usuario');
+          throw new ForbiddenException(
+            "No tenés permiso para editar rendiciones de este usuario",
+          );
         }
       } else {
-        throw new ForbiddenException('No puedes editar rendiciones de otro usuario');
+        throw new ForbiddenException(
+          "No puedes editar rendiciones de otro usuario",
+        );
       }
     }
 
@@ -110,7 +139,10 @@ export class RendMService {
   }
 
   /** Verifica si idUsuario tiene a loginAprobador como su aprobador directo */
-  async isSubordinado(idUsuario: string, loginAprobador: string): Promise<boolean> {
+  async isSubordinado(
+    idUsuario: string,
+    loginAprobador: string,
+  ): Promise<boolean> {
     return this.repo.isSubordinado(idUsuario, loginAprobador);
   }
 
@@ -131,23 +163,32 @@ export class RendMService {
   async remove(id: number, role: string, idUsuario: string) {
     const row = await this.findOne(id);
 
-    if (role !== 'ADMIN') {
+    if (role !== "ADMIN") {
       if (row.U_IdUsuario !== idUsuario) {
-        throw new ForbiddenException('No puedes eliminar rendiciones de otro usuario');
+        throw new ForbiddenException(
+          "No puedes eliminar rendiciones de otro usuario",
+        );
       }
-      if (row.U_Estado !== 1) {
-        throw new ForbiddenException('Solo se pueden eliminar rendiciones en estado ABIERTO');
+      if (row.U_Estado !== EstadoRendicion.ABIERTO) {
+        throw new ForbiddenException(
+          "Solo se pueden eliminar rendiciones en estado ABIERTO",
+        );
       }
     }
 
     // Borrado en cascada: eliminar adjuntos primero (archivos físicos + BD)
     this.logger.log(`Eliminando adjuntos de la rendición ${id}...`);
-    const { affected: adjuntosEliminados, errores } = await this.adjuntosService.removeByRendicion(id);
-    
+    const { affected: adjuntosEliminados, errores } =
+      await this.adjuntosService.removeByRendicion(id);
+
     if (errores.length > 0) {
-      this.logger.warn(`Errores al eliminar algunos adjuntos de la rendición ${id}: ${errores.join(', ')}`);
+      this.logger.warn(
+        `Errores al eliminar algunos adjuntos de la rendición ${id}: ${errores.join(", ")}`,
+      );
     } else if (adjuntosEliminados > 0) {
-      this.logger.log(`Se eliminaron ${adjuntosEliminados} adjuntos de la rendición ${id}`);
+      this.logger.log(
+        `Se eliminaron ${adjuntosEliminados} adjuntos de la rendición ${id}`,
+      );
     }
 
     // Ahora eliminar la rendición (cabecera + detalle se maneja en el repositorio)

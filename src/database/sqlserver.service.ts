@@ -1,7 +1,12 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import * as sql from 'mssql';
-import { IDatabaseService } from './interfaces/database.interface';
+import {
+  Injectable,
+  OnModuleInit,
+  OnModuleDestroy,
+  Logger,
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import * as sql from "mssql";
+import { IDatabaseService } from "./interfaces/database.interface";
 
 /**
  * Implementación SQL Server de IDatabaseService.
@@ -17,7 +22,9 @@ import { IDatabaseService } from './interfaces/database.interface';
  *   los convierte automáticamente antes de ejecutar.
  */
 @Injectable()
-export class SqlServerService implements IDatabaseService, OnModuleInit, OnModuleDestroy {
+export class SqlServerService
+  implements IDatabaseService, OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(SqlServerService.name);
   private pool: sql.ConnectionPool;
 
@@ -26,8 +33,10 @@ export class SqlServerService implements IDatabaseService, OnModuleInit, OnModul
   // ── Ciclo de vida ────────────────────────────────────────────────────────────
 
   async onModuleInit() {
-    const dbType = this.configService.get<string>('app.dbType', 'HANA').toUpperCase();
-    if (dbType !== 'SQLSERVER') return; // no conectar si no es el motor activo
+    const dbType = this.configService
+      .get<string>("app.dbType", "HANA")
+      .toUpperCase();
+    if (dbType !== "SQLSERVER") return; // no conectar si no es el motor activo
     await this.createPool();
   }
 
@@ -38,30 +47,34 @@ export class SqlServerService implements IDatabaseService, OnModuleInit, OnModul
   // ── Pool ─────────────────────────────────────────────────────────────────────
 
   private async createPool(): Promise<void> {
-    const cfg = this.configService.get('sqlserver');
+    const cfg = this.configService.get("sqlserver");
 
     const config: sql.config = {
-      server:   cfg.host,
-      port:     cfg.port,
-      user:     cfg.user,
+      server: cfg.host,
+      port: cfg.port,
+      user: cfg.user,
       password: cfg.password,
       database: cfg.database,
       options: {
-        encrypt:                cfg.encrypt,
+        encrypt: cfg.encrypt,
         trustServerCertificate: !cfg.encrypt,
       },
       pool: {
-        min:             cfg.pool.min,
-        max:             cfg.pool.max,
+        min: cfg.pool.min,
+        max: cfg.pool.max,
         idleTimeoutMillis: cfg.pool.idleTimeoutMs,
       },
     };
 
     try {
       this.pool = await new sql.ConnectionPool(config).connect();
-      this.logger.log(`Pool SQL Server creado (min: ${cfg.pool.min}, max: ${cfg.pool.max})`);
-    } catch (err: any) {
-      this.logger.warn(`SQL Server no disponible al iniciar: ${err.message}. Se reintentará en cada query.`);
+      this.logger.log(
+        `Pool SQL Server creado (min: ${cfg.pool.min}, max: ${cfg.pool.max})`,
+      );
+    } catch (err: unknown) {
+      this.logger.warn(
+        `SQL Server no disponible al iniciar: ${err instanceof Error ? err.message : String(err)}. Se reintentará en cada query.`,
+      );
     }
   }
 
@@ -69,16 +82,19 @@ export class SqlServerService implements IDatabaseService, OnModuleInit, OnModul
     if (!this.pool) return;
     try {
       await this.pool.close();
-      this.logger.log('Pool SQL Server cerrado');
-    } catch (err: any) {
-      this.logger.error('Error al cerrar el pool SQL Server', err.message);
+      this.logger.log("Pool SQL Server cerrado");
+    } catch (err: unknown) {
+      this.logger.error(
+        "Error al cerrar el pool SQL Server",
+        err instanceof Error ? err.message : String(err),
+      );
     }
   }
 
   // ── IDatabaseService ─────────────────────────────────────────────────────────
 
   /** SELECT — retorna todas las filas */
-  async query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+  async query<T = any>(sql: string, params: unknown[] = []): Promise<T[]> {
     const request = this.buildRequest(params);
     const { query, request: req } = this.prepareQuery(sql, params, request);
     const result = await req.query<T>(query);
@@ -86,13 +102,16 @@ export class SqlServerService implements IDatabaseService, OnModuleInit, OnModul
   }
 
   /** SELECT — retorna la primera fila o null */
-  async queryOne<T = any>(sql: string, params: any[] = []): Promise<T | null> {
+  async queryOne<T = any>(
+    sql: string,
+    params: unknown[] = [],
+  ): Promise<T | null> {
     const rows = await this.query<T>(sql, params);
     return rows[0] ?? null;
   }
 
   /** INSERT / UPDATE / DELETE — retorna filas afectadas */
-  async execute(sql: string, params: any[] = []): Promise<number> {
+  async execute(sql: string, params: unknown[] = []): Promise<number> {
     const request = this.buildRequest(params);
     const { query, request: req } = this.prepareQuery(sql, params, request);
     const result = await req.query(query);
@@ -102,7 +121,9 @@ export class SqlServerService implements IDatabaseService, OnModuleInit, OnModul
   /**
    * Transacción atómica con COMMIT / ROLLBACK automático.
    */
-  async transaction<T>(operations: (tx: IDatabaseService) => Promise<T>): Promise<T> {
+  async transaction<T>(
+    operations: (tx: IDatabaseService) => Promise<T>,
+  ): Promise<T> {
     const transaction = new sql.Transaction(this.pool);
     await transaction.begin();
 
@@ -111,11 +132,11 @@ export class SqlServerService implements IDatabaseService, OnModuleInit, OnModul
     try {
       const result = await operations(tx);
       await transaction.commit();
-      this.logger.debug('Transacción SQL Server: COMMIT');
+      this.logger.debug("Transacción SQL Server: COMMIT");
       return result;
     } catch (err) {
       await transaction.rollback().catch(() => {});
-      this.logger.error('Transacción SQL Server: ROLLBACK', err);
+      this.logger.error("Transacción SQL Server: ROLLBACK", err);
       throw err;
     }
   }
@@ -129,7 +150,7 @@ export class SqlServerService implements IDatabaseService, OnModuleInit, OnModul
    * SQL Server es case-insensitive en nombres de columna, pero
    * mantenemos el helper por consistencia con la interfaz.
    */
-  col(row: Record<string, any>, name: string): any {
+  col(row: Record<string, unknown>, name: string): any {
     return row[name] ?? row[name.toUpperCase()] ?? row[name.toLowerCase()];
   }
 
@@ -144,11 +165,11 @@ export class SqlServerService implements IDatabaseService, OnModuleInit, OnModul
    *   SQL salida:   SELECT * FROM T WHERE ID = @p1 AND ESTADO = @p2
    */
   private prepareQuery(
-    rawSql:  string,
-    params:  any[],
+    rawSql: string,
+    params: unknown[],
     request: sql.Request,
   ): { query: string; request: sql.Request } {
-    let idx   = 0;
+    let idx = 0;
     const query = rawSql.replace(/\?/g, () => {
       const name = `p${++idx}`;
       request.input(name, params[idx - 1]);
@@ -157,9 +178,11 @@ export class SqlServerService implements IDatabaseService, OnModuleInit, OnModul
     return { query, request };
   }
 
-  private buildRequest(_params: any[]): sql.Request {
+  private buildRequest(_params: unknown[]): sql.Request {
     if (!this.pool) {
-      throw new Error('Sin conexión a SQL Server. Verifica SQL_HOST, SQL_USER y SQL_PASSWORD en .env');
+      throw new Error(
+        "Sin conexión a SQL Server. Verifica SQL_HOST, SQL_USER y SQL_PASSWORD en .env",
+      );
     }
     return new sql.Request(this.pool);
   }
@@ -167,32 +190,46 @@ export class SqlServerService implements IDatabaseService, OnModuleInit, OnModul
   /**
    * Proxy que usa una transacción activa para todas las operaciones.
    */
-  private buildTransactionProxy(transaction: sql.Transaction): IDatabaseService {
+  private buildTransactionProxy(
+    transaction: sql.Transaction,
+  ): IDatabaseService {
     const makeRequest = () => new sql.Request(transaction);
 
     return {
-      query: async <T>(rawSql: string, params: any[] = []): Promise<T[]> => {
+      query: async <T>(
+        rawSql: string,
+        params: unknown[] = [],
+      ): Promise<T[]> => {
         const req = makeRequest();
         const { query, request } = this.prepareQuery(rawSql, params, req);
         const result = await request.query<T>(query);
         return result.recordset;
       },
 
-      queryOne: async <T>(rawSql: string, params: any[] = []): Promise<T | null> => {
+      queryOne: async <T>(
+        rawSql: string,
+        params: unknown[] = [],
+      ): Promise<T | null> => {
         const req = makeRequest();
         const { query, request } = this.prepareQuery(rawSql, params, req);
         const result = await request.query<T>(query);
         return result.recordset[0] ?? null;
       },
 
-      execute: async (rawSql: string, params: any[] = []): Promise<number> => {
+      execute: async (
+        rawSql: string,
+        params: unknown[] = [],
+      ): Promise<number> => {
         const req = makeRequest();
         const { query, request } = this.prepareQuery(rawSql, params, req);
         const result = await request.query(query);
         return result.rowsAffected[0] ?? 0;
       },
 
-      transaction: () => Promise.reject(new Error('No se pueden anidar transacciones en SQL Server')),
+      transaction: () =>
+        Promise.reject(
+          new Error("No se pueden anidar transacciones en SQL Server"),
+        ),
 
       isConnected: () => true,
 

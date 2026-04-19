@@ -1,71 +1,88 @@
-import { Injectable, Logger, Inject } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
-import { tbl } from '../../../database/db-table.helper';
+import { Injectable, Logger, Inject } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { EstadoRendicion } from "@common/enums";
+import {
+  IDatabaseService,
+  DATABASE_SERVICE,
+} from "@database/interfaces/database.interface";
+import { IAprobacionesRepository } from "./aprobaciones.repository.interface";
+import { tbl } from "@database/db-table.helper";
 
 export interface Aprobacion {
   U_IdRendicion: number;
-  U_Nivel:       number;
-  U_LoginAprob:  string;
-  U_NomAprob:    string;
-  U_Estado:      string;
-  U_FechaAprob:  string | null;
-  U_Comentario:  string | null;
+  U_Nivel: number;
+  U_LoginAprob: string;
+  U_NomAprob: string;
+  U_Estado: string;
+  U_FechaAprob: string | null;
+  U_Comentario: string | null;
 }
 
 export interface AprobacionConRendicion extends Aprobacion {
-  U_IdUsuario:    number;
-  U_NomUsuario:   string;
+  U_IdUsuario: number;
+  U_NomUsuario: string;
   U_NombrePerfil: string;
-  U_Objetivo:     string;
-  U_FechaIni:     string;
-  U_FechaFinal:   string;
-  U_Monto:        number;
-  U_Estado_Rend:  number;
+  U_Objetivo: string;
+  U_FechaIni: string;
+  U_FechaFinal: string;
+  U_Monto: number;
+  U_Estado_Rend: number;
 }
 
 @Injectable()
-export class AprobacionesHanaRepository {
+export class AprobacionesHanaRepository implements IAprobacionesRepository {
   private readonly logger = new Logger(AprobacionesHanaRepository.name);
 
-  private get schema(): string { return this.config.get<string>('hana.schema'); }
-  private get dbType(): string { return (this.config.get<string>('app.dbType') ?? 'HANA').toUpperCase(); }
-  private get DB(): string     { return tbl(this.schema, 'REND_APROBACION', this.dbType); }
-  private get DB_M(): string   { return tbl(this.schema, 'REND_M',          this.dbType); }
-  private get DB_U(): string   { return tbl(this.schema, 'REND_U',          this.dbType); }
+  private get schema(): string {
+    return this.config.get<string>("hana.schema");
+  }
+  private get dbType(): string {
+    return (this.config.get<string>("app.dbType") ?? "HANA").toUpperCase();
+  }
+  private get DB(): string {
+    return tbl(this.schema, "REND_APROBACION", this.dbType);
+  }
+  private get DB_M(): string {
+    return tbl(this.schema, "REND_M", this.dbType);
+  }
+  private get DB_U(): string {
+    return tbl(this.schema, "REND_U", this.dbType);
+  }
 
   constructor(
     @Inject(DATABASE_SERVICE) private readonly db: IDatabaseService,
     private readonly config: ConfigService,
   ) {}
 
-  private norm(row: any): Aprobacion {
+  private norm(row: Record<string, any>): Aprobacion {
     const c = (n: string) => this.db.col(row, n);
     return {
-      U_IdRendicion: Number(c('U_IdRendicion')),
-      U_Nivel:       Number(c('U_Nivel')),
-      U_LoginAprob:  c('U_LoginAprob')  ?? '',
-      U_NomAprob:    c('U_NomAprob')    ?? '',
-      U_Estado:      c('U_Estado')      ?? 'PENDIENTE',
-      U_FechaAprob:  c('U_FechaAprob')  ?? null,
-      U_Comentario:  c('U_Comentario')  ?? null,
+      U_IdRendicion: Number(c("U_IdRendicion")),
+      U_Nivel: Number(c("U_Nivel")),
+      U_LoginAprob: c("U_LoginAprob") ?? "",
+      U_NomAprob: c("U_NomAprob") ?? "",
+      U_Estado: c("U_Estado") ?? "PENDIENTE",
+      U_FechaAprob: c("U_FechaAprob") ?? null,
+      U_Comentario: c("U_Comentario") ?? null,
     };
   }
 
   /** Obtiene todos los niveles de aprobación de una rendición */
   async findByRendicion(idRendicion: number): Promise<Aprobacion[]> {
-    const rows = await this.db.query<any>(
+    const rows = await this.db.query(
       `SELECT "U_IdRendicion","U_Nivel","U_LoginAprob","U_NomAprob",
               "U_Estado","U_FechaAprob","U_Comentario"
        FROM ${this.DB} WHERE "U_IdRendicion" = ?
        ORDER BY "U_Nivel"`,
       [idRendicion],
     );
-    return rows.map(r => this.norm(r));
+    return rows.map((r) => this.norm(r));
   }
 
   /** Inserta todos los niveles de aprobación al enviar una rendición */
-  async createNiveles(niveles: Omit<Aprobacion, 'U_Estado' | 'U_FechaAprob' | 'U_Comentario'>[]): Promise<void> {
+  async createNiveles(
+    niveles: Omit<Aprobacion, "U_Estado" | "U_FechaAprob" | "U_Comentario">[],
+  ): Promise<void> {
     for (const n of niveles) {
       await this.db.execute(
         `INSERT INTO ${this.DB}
@@ -78,17 +95,16 @@ export class AprobacionesHanaRepository {
 
   /** Elimina todos los niveles de una rendición (para reenvío tras rechazo) */
   async deleteByRendicion(idRendicion: number): Promise<void> {
-    await this.db.execute(
-      `DELETE FROM ${this.DB} WHERE "U_IdRendicion" = ?`,
-      [idRendicion],
-    );
+    await this.db.execute(`DELETE FROM ${this.DB} WHERE "U_IdRendicion" = ?`, [
+      idRendicion,
+    ]);
   }
 
   /** Aprueba o rechaza un nivel específico */
   async updateEstado(
     idRendicion: number,
     nivel: number,
-    estado: 'APROBADO' | 'RECHAZADO',
+    estado: "APROBADO" | "RECHAZADO",
     comentario?: string,
   ): Promise<void> {
     await this.db.execute(
@@ -101,23 +117,25 @@ export class AprobacionesHanaRepository {
 
   /** Verifica si todos los niveles están aprobados */
   async allApproved(idRendicion: number): Promise<boolean> {
-    const rows = await this.db.query<any>(
+    const rows = await this.db.query(
       `SELECT COUNT(*) AS "total",
               SUM(CASE WHEN "U_Estado" = 'APROBADO' THEN 1 ELSE 0 END) AS "aprobados"
        FROM ${this.DB} WHERE "U_IdRendicion" = ?`,
       [idRendicion],
     );
-    const total    = Number(this.db.col(rows[0], 'total'))    || 0;
-    const aprobados = Number(this.db.col(rows[0], 'aprobados')) || 0;
+    const total = Number(this.db.col(rows[0], "total")) || 0;
+    const aprobados = Number(this.db.col(rows[0], "aprobados")) || 0;
     return total > 0 && total === aprobados;
   }
 
   /** Rendiciones pendientes para un aprobador — solo el siguiente nivel activo */
-  async findPendientesParaAprobador(loginAprob: string): Promise<AprobacionConRendicion[]> {
+  async findPendientesParaAprobador(
+    loginAprob: string,
+  ): Promise<AprobacionConRendicion[]> {
     // 1) Aprobaciones formales desde REND_APROBACION
     // NOTA: Se hace JOIN con REND_U para validar que el usuario de la rendición
     // sea subordinado del aprobador (evita cruzar rendiciones con mismo ID numérico)
-    const rowsFormales = await this.db.query<any>(
+    const rowsFormales = await this.db.query(
       `SELECT a."U_IdRendicion", a."U_Nivel", a."U_LoginAprob", a."U_NomAprob",
               a."U_Estado", a."U_FechaAprob", a."U_Comentario",
               m."U_IdUsuario", m."U_NomUsuario", m."U_NombrePerfil",
@@ -142,21 +160,21 @@ export class AprobacionesHanaRepository {
       [loginAprob, loginAprob],
     );
 
-    const formales = rowsFormales.map(r => ({
+    const formales = rowsFormales.map((r) => ({
       ...this.norm(r),
-      U_IdUsuario:    Number(this.db.col(r, 'U_IdUsuario')),
-      U_NomUsuario:   this.db.col(r, 'U_NomUsuario')   ?? '',
-      U_NombrePerfil: this.db.col(r, 'U_NombrePerfil') ?? '',
-      U_Objetivo:     this.db.col(r, 'U_Objetivo')     ?? '',
-      U_FechaIni:     this.db.col(r, 'U_FechaIni')     ?? '',
-      U_FechaFinal:   this.db.col(r, 'U_FechaFinal')   ?? '',
-      U_Monto:        Number(this.db.col(r, 'U_Monto')) || 0,
-      U_Estado_Rend:  Number(this.db.col(r, 'U_Estado_Rend')),
+      U_IdUsuario: Number(this.db.col(r, "U_IdUsuario")),
+      U_NomUsuario: this.db.col(r, "U_NomUsuario") ?? "",
+      U_NombrePerfil: this.db.col(r, "U_NombrePerfil") ?? "",
+      U_Objetivo: this.db.col(r, "U_Objetivo") ?? "",
+      U_FechaIni: this.db.col(r, "U_FechaIni") ?? "",
+      U_FechaFinal: this.db.col(r, "U_FechaFinal") ?? "",
+      U_Monto: Number(this.db.col(r, "U_Monto")) || 0,
+      U_Estado_Rend: Number(this.db.col(r, "U_Estado_Rend")),
     }));
 
     // 2) Fallback: rendiciones ENVIADAS de subordinados directos que NO tengan REND_APROBACION
     //    (datos históricos o casos donde no se generó la cadena de aprobación)
-    const rowsFallback = await this.db.query<any>(
+    const rowsFallback = await this.db.query(
       `SELECT
          m."U_IdRendicion",
          1 AS "U_Nivel",
@@ -170,7 +188,7 @@ export class AprobacionesHanaRepository {
          m."U_Monto", m."U_Estado" AS "U_Estado_Rend", m."U_IdPerfil"
        FROM ${this.DB_M} m
        JOIN ${this.DB_U} u ON CAST(u."U_IdU" AS VARCHAR) = m."U_IdUsuario"
-       WHERE m."U_Estado" = 4
+       WHERE m."U_Estado" = ${EstadoRendicion.ENVIADO}
          AND LOWER(u."U_NomSup") = LOWER(?)
          AND NOT EXISTS (
            SELECT 1 FROM ${this.DB} a
@@ -180,29 +198,34 @@ export class AprobacionesHanaRepository {
       [loginAprob, loginAprob],
     );
 
-    const fallback = rowsFallback.map(r => ({
+    const fallback = rowsFallback.map((r) => ({
       ...this.norm(r),
-      U_IdUsuario:    Number(this.db.col(r, 'U_IdUsuario')),
-      U_NomUsuario:   this.db.col(r, 'U_NomUsuario')   ?? '',
-      U_NombrePerfil: this.db.col(r, 'U_NombrePerfil') ?? '',
-      U_Objetivo:     this.db.col(r, 'U_Objetivo')     ?? '',
-      U_FechaIni:     this.db.col(r, 'U_FechaIni')     ?? '',
-      U_FechaFinal:   this.db.col(r, 'U_FechaFinal')   ?? '',
-      U_Monto:        Number(this.db.col(r, 'U_Monto')) || 0,
-      U_Estado_Rend:  Number(this.db.col(r, 'U_Estado_Rend')),
+      U_IdUsuario: Number(this.db.col(r, "U_IdUsuario")),
+      U_NomUsuario: this.db.col(r, "U_NomUsuario") ?? "",
+      U_NombrePerfil: this.db.col(r, "U_NombrePerfil") ?? "",
+      U_Objetivo: this.db.col(r, "U_Objetivo") ?? "",
+      U_FechaIni: this.db.col(r, "U_FechaIni") ?? "",
+      U_FechaFinal: this.db.col(r, "U_FechaFinal") ?? "",
+      U_Monto: Number(this.db.col(r, "U_Monto")) || 0,
+      U_Estado_Rend: Number(this.db.col(r, "U_Estado_Rend")),
     }));
 
     // Concatenar y eliminar duplicados por U_IdRendicion (priorizar formales)
     const mapa = new Map<number, AprobacionConRendicion>();
     for (const f of formales) mapa.set(f.U_IdRendicion, f);
-    for (const f of fallback) if (!mapa.has(f.U_IdRendicion)) mapa.set(f.U_IdRendicion, f);
+    for (const f of fallback)
+      if (!mapa.has(f.U_IdRendicion)) mapa.set(f.U_IdRendicion, f);
 
-    return Array.from(mapa.values()).sort((a, b) => b.U_IdRendicion - a.U_IdRendicion);
+    return Array.from(mapa.values()).sort(
+      (a, b) => b.U_IdRendicion - a.U_IdRendicion,
+    );
   }
 
   /** Rendiciones pendientes de nivel 2 para un aprobador (ya aprobadas por nivel 1) */
-  async findPendientesNivel2(loginAprob: string): Promise<AprobacionConRendicion[]> {
-    const rows = await this.db.query<any>(
+  async findPendientesNivel2(
+    loginAprob: string,
+  ): Promise<AprobacionConRendicion[]> {
+    const rows = await this.db.query(
       `SELECT a."U_IdRendicion", a."U_Nivel", a."U_LoginAprob", a."U_NomAprob",
               a."U_Estado", a."U_FechaAprob", a."U_Comentario",
               m."U_IdUsuario", m."U_NomUsuario", m."U_NombrePerfil",
@@ -224,34 +247,36 @@ export class AprobacionesHanaRepository {
        ORDER BY m."U_FechaIni" DESC`,
       [loginAprob, loginAprob],
     );
-    return rows.map(r => ({
+    return rows.map((r) => ({
       ...this.norm(r),
-      U_IdUsuario:    Number(this.db.col(r, 'U_IdUsuario')),
-      U_NomUsuario:   this.db.col(r, 'U_NomUsuario')   ?? '',
-      U_NombrePerfil: this.db.col(r, 'U_NombrePerfil') ?? '',
-      U_Objetivo:     this.db.col(r, 'U_Objetivo')     ?? '',
-      U_FechaIni:     this.db.col(r, 'U_FechaIni')     ?? '',
-      U_FechaFinal:   this.db.col(r, 'U_FechaFinal')   ?? '',
-      U_Monto:        Number(this.db.col(r, 'U_Monto')) || 0,
-      U_Estado_Rend:  Number(this.db.col(r, 'U_Estado_Rend')),
+      U_IdUsuario: Number(this.db.col(r, "U_IdUsuario")),
+      U_NomUsuario: this.db.col(r, "U_NomUsuario") ?? "",
+      U_NombrePerfil: this.db.col(r, "U_NombrePerfil") ?? "",
+      U_Objetivo: this.db.col(r, "U_Objetivo") ?? "",
+      U_FechaIni: this.db.col(r, "U_FechaIni") ?? "",
+      U_FechaFinal: this.db.col(r, "U_FechaFinal") ?? "",
+      U_Monto: Number(this.db.col(r, "U_Monto")) || 0,
+      U_Estado_Rend: Number(this.db.col(r, "U_Estado_Rend")),
     }));
   }
 
   /** Obtiene los perfiles que tiene asignados un aprobador */
   async findPerfilesByAprobador(loginAprob: string): Promise<number[]> {
-    const rows = await this.db.query<any>(
+    const rows = await this.db.query(
       `SELECT DISTINCT p."U_IDPERFIL"
        FROM ${this.DB_U} u
        JOIN ${this.schema}."REND_PRM" p ON p."U_IDUSUARIO" = u."U_IdU"
        WHERE LOWER(u."U_NomSup") = LOWER(?)`,
       [loginAprob],
     );
-    return rows.map(r => Number(this.db.col(r, 'U_IDPERFIL'))).filter(Boolean);
+    return rows
+      .map((r) => Number(this.db.col(r, "U_IDPERFIL")))
+      .filter(Boolean);
   }
 
   /** Cuenta cuántas rendiciones tiene pendientes un aprobador (nivel 1) */
   async countPendientes(loginAprob: string): Promise<number> {
-    const rowsFormales = await this.db.query<any>(
+    const rowsFormales = await this.db.query(
       `SELECT COUNT(*) AS "cnt"
        FROM ${this.DB} a
        JOIN ${this.DB_M} m ON m."U_IdRendicion" = a."U_IdRendicion"
@@ -270,13 +295,13 @@ export class AprobacionesHanaRepository {
          )`,
       [loginAprob, loginAprob],
     );
-    const cntFormales = Number(this.db.col(rowsFormales[0], 'cnt')) || 0;
+    const cntFormales = Number(this.db.col(rowsFormales[0], "cnt")) || 0;
 
-    const rowsFallback = await this.db.query<any>(
+    const rowsFallback = await this.db.query(
       `SELECT COUNT(*) AS "cnt"
        FROM ${this.DB_M} m
        JOIN ${this.DB_U} u ON CAST(u."U_IdU" AS VARCHAR) = m."U_IdUsuario"
-       WHERE m."U_Estado" = 4
+       WHERE m."U_Estado" = ${EstadoRendicion.ENVIADO}
          AND LOWER(u."U_NomSup") = LOWER(?)
          AND NOT EXISTS (
            SELECT 1 FROM ${this.DB} a
@@ -284,14 +309,14 @@ export class AprobacionesHanaRepository {
          )`,
       [loginAprob],
     );
-    const cntFallback = Number(this.db.col(rowsFallback[0], 'cnt')) || 0;
+    const cntFallback = Number(this.db.col(rowsFallback[0], "cnt")) || 0;
 
     return cntFormales + cntFallback;
   }
 
   /** Cuenta cuántas rendiciones tiene pendientes de nivel 2 un aprobador */
   async countPendientesNivel2(loginAprob: string): Promise<number> {
-    const rows = await this.db.query<any>(
+    const rows = await this.db.query(
       `SELECT COUNT(*) AS "cnt"
        FROM ${this.DB} a
        JOIN ${this.DB_M} m ON m."U_IdRendicion" = a."U_IdRendicion"
@@ -308,7 +333,83 @@ export class AprobacionesHanaRepository {
          )`,
       [loginAprob, loginAprob],
     );
-    return Number(this.db.col(rows[0], 'cnt')) || 0;
+    return Number(this.db.col(rows[0], "cnt")) || 0;
+  }
+
+  /** Recrea los niveles de aprobación de una rendición en una transacción atómica */
+  async recrearNiveles(
+    idRendicion: number,
+    niveles: Omit<Aprobacion, "U_Estado" | "U_FechaAprob" | "U_Comentario">[],
+  ): Promise<void> {
+    return this.db.transaction(async (tx) => {
+      await tx.execute(`DELETE FROM ${this.DB} WHERE "U_IdRendicion" = ?`, [
+        idRendicion,
+      ]);
+      for (const n of niveles) {
+        await tx.execute(
+          `INSERT INTO ${this.DB}
+             ("U_IdRendicion","U_Nivel","U_LoginAprob","U_NomAprob","U_Estado")
+           VALUES (?, ?, ?, ?, 'PENDIENTE')`,
+          [n.U_IdRendicion, n.U_Nivel, n.U_LoginAprob, n.U_NomAprob],
+        );
+      }
+    });
+  }
+
+  /** Aprueba un nivel y, si corresponde, la cabecera en una sola transacción */
+  async aprobarNivelConCabecera(
+    idRendicion: number,
+    nivel: number,
+    comentario?: string,
+  ): Promise<{ estadoFinal: "APROBADO" | "ENVIADO" }> {
+    return this.db.transaction(async (tx) => {
+      await tx.execute(
+        `UPDATE ${this.DB}
+         SET "U_Estado" = ?, "U_FechaAprob" = CURRENT_TIMESTAMP, "U_Comentario" = ?
+         WHERE "U_IdRendicion" = ? AND "U_Nivel" = ?`,
+        ["APROBADO", comentario ?? null, idRendicion, nivel],
+      );
+
+      const rows = await tx.query(
+        `SELECT COUNT(*) AS "total",
+                SUM(CASE WHEN "U_Estado" = 'APROBADO' THEN 1 ELSE 0 END) AS "aprobados"
+         FROM ${this.DB} WHERE "U_IdRendicion" = ?`,
+        [idRendicion],
+      );
+      const total = Number(this.db.col(rows[0], "total")) || 0;
+      const aprobados = Number(this.db.col(rows[0], "aprobados")) || 0;
+
+      if (total > 0 && total === aprobados) {
+        await tx.execute(
+          `UPDATE ${this.DB_M} SET "U_Estado" = ? WHERE "U_IdRendicion" = ?`,
+          [EstadoRendicion.APROBADO, idRendicion],
+        );
+        return { estadoFinal: "APROBADO" };
+      }
+
+      return { estadoFinal: "ENVIADO" };
+    });
+  }
+
+  /** Rechaza un nivel y vuelve la cabecera a ABIERTO en una sola transacción */
+  async rechazarNivelConCabecera(
+    idRendicion: number,
+    nivel: number,
+    comentario?: string,
+  ): Promise<void> {
+    return this.db.transaction(async (tx) => {
+      await tx.execute(
+        `UPDATE ${this.DB}
+         SET "U_Estado" = ?, "U_FechaAprob" = CURRENT_TIMESTAMP, "U_Comentario" = ?
+         WHERE "U_IdRendicion" = ? AND "U_Nivel" = ?`,
+        ["RECHAZADO", comentario ?? null, idRendicion, nivel],
+      );
+
+      await tx.execute(
+        `UPDATE ${this.DB_M} SET "U_Estado" = ? WHERE "U_IdRendicion" = ?`,
+        [EstadoRendicion.ABIERTO, idRendicion],
+      );
+    });
   }
 
   /** Obtiene la cadena de aprobadores recorriendo U_NomSup */
@@ -323,22 +424,24 @@ export class AprobacionesHanaRepository {
       if (visitados.has(loginActual)) break; // evitar ciclos
       visitados.add(loginActual);
 
-      const rows = await this.db.query<any>(
+      const rows = await this.db.query(
         `SELECT "U_NomSup", "U_NomUser" FROM ${this.DB_U} WHERE LOWER("U_Login") = LOWER(?)`,
         [loginActual],
       );
       if (!rows.length) break;
 
-      const nomSup  = this.db.col(rows[0], 'U_NomSup')  ?? '';
+      const nomSup = this.db.col(rows[0], "U_NomSup") ?? "";
 
       if (!nomSup?.trim()) break; // sin aprobador → es el último nivel
 
       // Obtener nombre del superior
-      const supRows = await this.db.query<any>(
+      const supRows = await this.db.query(
         `SELECT "U_NomUser" FROM ${this.DB_U} WHERE LOWER("U_Login") = LOWER(?)`,
         [nomSup],
       );
-      const supNombre = supRows.length ? (this.db.col(supRows[0], 'U_NomUser') ?? nomSup) : nomSup;
+      const supNombre = supRows.length
+        ? (this.db.col(supRows[0], "U_NomUser") ?? nomSup)
+        : nomSup;
 
       cadena.push({ login: nomSup, nombre: supNombre });
       loginActual = nomSup;

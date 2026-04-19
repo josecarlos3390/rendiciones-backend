@@ -1,4 +1,4 @@
-import {
+﻿import {
   Controller,
   Get,
   Post,
@@ -9,8 +9,9 @@ import {
   UseInterceptors,
   UploadedFiles,
   BadRequestException,
-} from '@nestjs/common';
-import { FilesInterceptor } from '@nestjs/platform-express';
+  Req,
+} from "@nestjs/common";
+import { FilesInterceptor } from "@nestjs/platform-express";
 import {
   ApiTags,
   ApiOperation,
@@ -18,29 +19,30 @@ import {
   ApiBearerAuth,
   ApiConsumes,
   ApiBody,
-} from '@nestjs/swagger';
-import { AiConfigService } from './services/ai-config.service';
-import { AppModeService } from './services/app-mode.service';
-import { ClasificadorService } from './services/clasificador.service';
-import { ValidadorSiatService } from './services/validador-siat.service';
-import { AnalisisRendicionService } from './services/analisis-rendicion.service';
-import { ChatbotService } from './services/chatbot.service';
-import { InvoiceExtractorService } from './services/invoice-extractor.service';
-import { BatchProcessorService } from './services/batch-processor.service';
-import { ConfirmBatchDto } from './dto/process-pdfs.dto';
-import { SugerirClasificacionDto } from './dto/sugerir-clasificacion.dto';
-import { ValidarSiatDto } from './dto/validar-siat.dto';
+} from "@nestjs/swagger";
+import { AiConfigService } from "./services/ai-config.service";
+import { AppModeService } from "./services/app-mode.service";
+import { ClasificadorService } from "./services/clasificador.service";
+import { ValidadorSiatService } from "./services/validador-siat.service";
+import { AnalisisRendicionService } from "./services/analisis-rendicion.service";
+import { ChatbotService } from "./services/chatbot.service";
+import { InvoiceExtractorService } from "./services/invoice-extractor.service";
+import { BatchProcessorService } from "./services/batch-processor.service";
+import { ConfirmBatchDto } from "./dto/process-pdfs.dto";
+import { SugerirClasificacionDto } from "./dto/sugerir-clasificacion.dto";
+import { ValidarSiatDto } from "./dto/validar-siat.dto";
 
-import { ChatConsultaDto } from './dto/chat.dto';
+import { ChatConsultaDto } from "./dto/chat.dto";
+import type { RequestWithUser } from "@common/types";
 import {
   AiStatusResponse,
   ProcessPdfsResponse,
   ConfirmBatchResponse,
-} from './interfaces/pdf-result.interface';
+} from "./interfaces/pdf-result.interface";
 
-@ApiTags('Inteligencia Artificial (IA)')
+@ApiTags("Inteligencia Artificial (IA)")
 @ApiBearerAuth()
-@Controller('ai')
+@Controller("ai")
 export class AiController {
   constructor(
     private readonly configService: AiConfigService,
@@ -53,54 +55,69 @@ export class AiController {
     private readonly batchProcessor: BatchProcessorService,
   ) {}
 
+  private _assertAiEnabled(): void {
+    if (!this.configService.enabled) {
+      throw new BadRequestException(
+        "Las funcionalidades de IA no estÃ¡n habilitadas",
+      );
+    }
+  }
+
+  private _assertAnthropicConfigured(): void {
+    if (!this.configService.isAnthropicConfigured) {
+      throw new BadRequestException(
+        "Claude no estÃ¡ configurado. Verifica ANTHROPIC_API_KEY",
+      );
+    }
+  }
+
   /**
-   * Verifica el estado de la configuración de IA y modo de operación
+   * Verifica el estado de la configuraciÃ³n de IA y modo de operaciÃ³n
    */
   /**
-   * Sugiere clasificación contable para un gasto
+   * Sugiere clasificaciÃ³n contable para un gasto
    */
-  @Post('sugerir-clasificacion')
+  @Post("sugerir-clasificacion")
   @ApiOperation({
-    summary: 'Sugerir clasificación de gasto',
-    description: 'La IA analiza el concepto y sugiere cuenta contable, dimensión/norma y proyecto. Funciona en modo ONLINE y OFFLINE.',
+    summary: "Sugerir clasificaciÃ³n de gasto",
+    description:
+      "La IA analiza el concepto y sugiere cuenta contable, dimensiÃ³n/norma y proyecto. Funciona en modo ONLINE y OFFLINE.",
   })
   @ApiResponse({
     status: 200,
-    description: 'Sugerencia de clasificación generada',
+    description: "Sugerencia de clasificaciÃ³n generada",
     type: Object,
   })
   @ApiResponse({
     status: 400,
-    description: 'Datos inválidos o IA no habilitada',
+    description: "Datos invÃ¡lidos o IA no habilitada",
   })
   async sugerirClasificacion(@Body() dto: SugerirClasificacionDto) {
-    // Verificar IA habilitada
-    if (!this.configService.enabled) {
-      throw new BadRequestException('Las funcionalidades de IA no están habilitadas');
-    }
+    this._assertAiEnabled();
     return this.clasificadorService.sugerirClasificacion(dto);
   }
 
   /**
    * Valida una factura contra el SIAT
    */
-  @Post('validar-siat')
+  @Post("validar-siat")
   @ApiOperation({
-    summary: 'Validar factura contra SIAT',
-    description: 'Cruza los datos de una factura con los registros oficiales del SIAT. Detecta discrepancias y explica diferencias usando IA si está disponible.',
+    summary: "Validar factura contra SIAT",
+    description:
+      "Cruza los datos de una factura con los registros oficiales del SIAT. Detecta discrepancias y explica diferencias usando IA si estÃ¡ disponible.",
   })
   @ApiResponse({
     status: 200,
-    description: 'Resultado de la validación',
+    description: "Resultado de la validaciÃ³n",
     type: Object,
   })
   @ApiResponse({
     status: 400,
-    description: 'CUF no proporcionado',
+    description: "CUF no proporcionado",
   })
   async validarSiat(@Body() dto: ValidarSiatDto) {
     if (!dto.cuf && !dto.urlQr) {
-      throw new BadRequestException('Debe proporcionar el CUF o la URL del QR');
+      throw new BadRequestException("Debe proporcionar el CUF o la URL del QR");
     }
 
     const cuf = dto.cuf || this.extraerCufDeUrl(dto.urlQr!);
@@ -114,133 +131,134 @@ export class AiController {
   private extraerCufDeUrl(url: string): string {
     try {
       const urlObj = new URL(url);
-      const cuf = urlObj.searchParams.get('cuf');
+      const cuf = urlObj.searchParams.get("cuf");
       if (!cuf) {
-        throw new BadRequestException('URL no contiene CUF válido');
+        throw new BadRequestException("URL no contiene CUF vÃ¡lido");
       }
       return cuf;
     } catch {
-      throw new BadRequestException('URL inválida');
+      throw new BadRequestException("URL invÃ¡lida");
     }
   }
 
   /**
-   * Analiza una rendición para asistir al aprobador
+   * Analiza una rendiciÃ³n para asistir al aprobador
    */
   /**
    * Chatbot de rendiciones
    */
-  @Post('chat')
+  @Post("chat")
   @ApiOperation({
-    summary: 'Chatbot de rendiciones',
-    description: 'Asistente conversacional que responde preguntas sobre rendiciones, gastos, normas y políticas.',
+    summary: "Chatbot de rendiciones",
+    description:
+      "Asistente conversacional que responde preguntas sobre rendiciones, gastos, normas y polÃ­ticas.",
   })
   @ApiResponse({
     status: 200,
-    description: 'Respuesta del chatbot',
+    description: "Respuesta del chatbot",
     type: Object,
   })
   async chat(@Body() dto: ChatConsultaDto) {
     return this.chatbotService.procesarConsulta(dto);
   }
 
-  @Get('analisis-rendicion/:id')
+  @Get("analisis-rendicion/:id")
   @ApiOperation({
-    summary: 'Analizar rendición para aprobación',
-    description: 'La IA analiza la rendición y proporciona recomendaciones al aprobador: score de riesgo, factores positivos/negativos, y sugerencia de acción. Funciona en modo ONLINE y OFFLINE.',
+    summary: "Analizar rendiciÃ³n para aprobaciÃ³n",
+    description:
+      "La IA analiza la rendiciÃ³n y proporciona recomendaciones al aprobador: score de riesgo, factores positivos/negativos, y sugerencia de acciÃ³n. Funciona en modo ONLINE y OFFLINE.",
   })
   @ApiResponse({
     status: 200,
-    description: 'Análisis de la rendición',
+    description: "AnÃ¡lisis de la rendiciÃ³n",
     type: Object,
   })
   @ApiResponse({
     status: 400,
-    description: 'IA no habilitada',
+    description: "IA no habilitada",
   })
   async analizarRendicion(
-    @Param('id', ParseIntPipe) id: number,
-    @Query('usuarioId') usuarioId?: string,
+    @Param("id", ParseIntPipe) id: number,
+    @Query("usuarioId") usuarioId?: string,
   ) {
-    // Verificar IA habilitada
-    if (!this.configService.enabled) {
-      throw new BadRequestException('Las funcionalidades de IA no están habilitadas');
-    }
+    this._assertAiEnabled();
     return this.analisisRendicionService.analizarRendicion(id, usuarioId);
   }
 
-  @Get('status')
+  @Get("status")
   @ApiOperation({
-    summary: 'Estado de la IA y modo de operación',
-    description: 'Verifica si las funcionalidades de IA están habilitadas y el modo ONLINE/OFFLINE',
+    summary: "Estado de la IA y modo de operaciÃ³n",
+    description:
+      "Verifica si las funcionalidades de IA estÃ¡n habilitadas y el modo ONLINE/OFFLINE",
   })
   @ApiResponse({
     status: 200,
-    description: 'Estado de la IA y modo de operación',
+    description: "Estado de la IA y modo de operaciÃ³n",
     type: Object,
   })
   getStatus(): AiStatusResponse {
     const aiStatus = this.configService.getStatus();
     const appMode = this.appModeService.getStatus();
-    
+
     return {
       ia: {
         enabled: aiStatus.enabled,
         provider: aiStatus.provider,
         model: aiStatus.model,
         configured: aiStatus.configured,
-        version: '1.0.0',
+        version: "1.0.0",
       },
       modo: appMode,
     };
   }
 
   /**
-   * Procesa múltiples PDFs de facturas
+   * Procesa mÃºltiples PDFs de facturas
    */
-  @Post('process-pdfs')
+  @Post("process-pdfs")
   @ApiOperation({
-    summary: 'Procesar PDFs con IA',
-    description: 'Procesa múltiples PDFs de facturas usando Claude para extraer datos automáticamente',
+    summary: "Procesar PDFs con IA",
+    description:
+      "Procesa mÃºltiples PDFs de facturas usando Claude para extraer datos automÃ¡ticamente",
   })
-  @ApiConsumes('multipart/form-data')
+  @ApiConsumes("multipart/form-data")
   @ApiBody({
     schema: {
-      type: 'object',
+      type: "object",
       properties: {
         files: {
-          type: 'array',
+          type: "array",
           items: {
-            type: 'string',
-            format: 'binary',
+            type: "string",
+            format: "binary",
           },
-          description: 'Archivos PDF de facturas',
+          description: "Archivos PDF de facturas",
         },
       },
     },
   })
   @ApiResponse({
     status: 200,
-    description: 'PDFs procesados',
+    description: "PDFs procesados",
     type: Object,
   })
   @ApiResponse({
     status: 400,
-    description: 'Error en el procesamiento',
+    description: "Error en el procesamiento",
   })
   @ApiResponse({
     status: 503,
-    description: 'IA no está habilitada o configurada',
+    description: "IA no estÃ¡ habilitada o configurada",
   })
   @UseInterceptors(
-    FilesInterceptor('files', 10, {
+    FilesInterceptor("files", 10, {
       limits: {
         fileSize: 10 * 1024 * 1024, // 10MB por archivo
       },
       fileFilter: (req, file, callback) => {
-        if (file.mimetype !== 'application/pdf') {
+        if (file.mimetype !== "application/pdf") {
           return callback(
-            new BadRequestException('Solo se permiten archivos PDF'),
+            new BadRequestException("Solo se permiten archivos PDF"),
             false,
           );
         }
@@ -249,23 +267,19 @@ export class AiController {
     }),
   )
   async processPdfs(
-    @UploadedFiles() files: any[],
+    @UploadedFiles()
+    files: {
+      originalname: string;
+      mimetype: string;
+      size: number;
+      buffer: Buffer;
+    }[],
   ): Promise<ProcessPdfsResponse> {
-    // Verificar que IA esté habilitada
-    if (!this.configService.enabled) {
-      throw new BadRequestException(
-        'Las funcionalidades de IA no están habilitadas',
-      );
-    }
-
-    if (!this.configService.isAnthropicConfigured) {
-      throw new BadRequestException(
-        'Claude no está configurado. Verifica ANTHROPIC_API_KEY',
-      );
-    }
+    this._assertAiEnabled();
+    this._assertAnthropicConfigured();
 
     if (!files || files.length === 0) {
-      throw new BadRequestException('No se proporcionaron archivos PDF');
+      throw new BadRequestException("No se proporcionaron archivos PDF");
     }
 
     // Preparar archivos para procesamiento
@@ -277,11 +291,11 @@ export class AiController {
     // Procesar PDFs
     const results = await this.extractorService.processMultiplePdfs(fileData);
 
-    // Almacenar resultados para confirmación posterior
+    // Almacenar resultados para confirmaciÃ³n posterior
     this.batchProcessor.storeResults(results);
 
-    const completed = results.filter((r) => r.status === 'completed').length;
-    const errors = results.filter((r) => r.status === 'error').length;
+    const completed = results.filter((r) => r.status === "completed").length;
+    const errors = results.filter((r) => r.status === "error").length;
 
     return {
       results,
@@ -292,41 +306,36 @@ export class AiController {
   }
 
   /**
-   * Confirma y crea las líneas de rendición desde los resultados procesados
+   * Confirma y crea las lÃ­neas de rendiciÃ³n desde los resultados procesados
    */
-  @Post('confirm-batch')
+  @Post("confirm-batch")
   @ApiOperation({
-    summary: 'Confirmar batch de facturas',
-    description: 'Crea las líneas en REND_D a partir de los resultados procesados por IA',
+    summary: "Confirmar batch de facturas",
+    description:
+      "Crea las lÃ­neas en REND_D a partir de los resultados procesados por IA",
   })
   @ApiResponse({
     status: 200,
-    description: 'Líneas creadas exitosamente',
+    description: "LÃ­neas creadas exitosamente",
     type: Object,
   })
   @ApiResponse({
     status: 400,
-    description: 'Datos inválidos o resultados no encontrados',
+    description: "Datos invÃ¡lidos o resultados no encontrados",
   })
   async confirmBatch(
     @Body() dto: ConfirmBatchDto,
-    // Estos parámetros vendrían de guards/decodificadores JWT en una implementación real
-    // Por ahora usamos valores del DTO
+    @Req() req: RequestWithUser,
   ): Promise<ConfirmBatchResponse> {
-    // Verificar IA habilitada
-    if (!this.configService.enabled) {
-      throw new BadRequestException(
-        'Las funcionalidades de IA no están habilitadas',
-      );
-    }
+    this._assertAiEnabled();
 
     return this.batchProcessor.confirmBatch(
       dto.resultIds,
       dto.idRendicion,
-      dto.idUsuario,
-      'USER', // TODO: Obtener del token JWT
-      dto.idUsuario, // TODO: Obtener del token JWT
-      false, // TODO: Obtener del servicio de permisos
+      String(req.user.sub),
+      req.user.role,
+      req.user.username,
+      req.user.esAprobador,
     );
   }
 }

@@ -1,17 +1,25 @@
-import { Injectable, Inject } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { IDatabaseService, DATABASE_SERVICE } from '../../../database/interfaces/database.interface';
-import { IProvRepository } from './prov.repository.interface';
-import { Prov } from '../interfaces/prov.interface';
-import { CreateProvDto } from '../dto/create-prov.dto';
-import { tbl } from '../../../database/db-table.helper';
+import { Injectable, Inject } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import {
+  IDatabaseService,
+  DATABASE_SERVICE,
+} from "@database/interfaces/database.interface";
+import { IProvRepository } from "./prov.repository.interface";
+import { Prov } from "../interfaces/prov.interface";
+import { CreateProvDto } from "../dto/create-prov.dto";
+import { tbl } from "@database/db-table.helper";
 
 @Injectable()
 export class ProvHanaRepository implements IProvRepository {
-
-  private get schema(): string { return this.config.get<string>('hana.schema'); }
-  private get dbType(): string { return this.config.get<string>('app.dbType', 'HANA').toUpperCase(); }
-  private get DB(): string     { return tbl(this.schema, 'REND_PROV', this.dbType); }
+  private get schema(): string {
+    return this.config.get<string>("hana.schema");
+  }
+  private get dbType(): string {
+    return this.config.get<string>("app.dbType", "HANA").toUpperCase();
+  }
+  private get DB(): string {
+    return tbl(this.schema, "REND_PROV", this.dbType);
+  }
 
   constructor(
     @Inject(DATABASE_SERVICE)
@@ -37,12 +45,12 @@ export class ProvHanaRepository implements IProvRepository {
     return this._hasCodigo;
   }
 
-  private normalize(row: any, withCodigo: boolean): Prov {
+  private normalize(row: Record<string, any>, withCodigo: boolean): Prov {
     return {
-      U_CODIGO:       withCodigo ? String(this.db.col(row, 'U_CODIGO') ?? '') : '',
-      U_NIT:          String(this.db.col(row, 'U_NIT')          ?? ''),
-      U_RAZON_SOCIAL: String(this.db.col(row, 'U_RAZON_SOCIAL') ?? ''),
-      U_TIPO:         withCodigo ? String(this.db.col(row, 'U_TIPO') ?? '') : '',
+      U_CODIGO: withCodigo ? String(this.db.col(row, "U_CODIGO") ?? "") : "",
+      U_NIT: String(this.db.col(row, "U_NIT") ?? ""),
+      U_RAZON_SOCIAL: String(this.db.col(row, "U_RAZON_SOCIAL") ?? ""),
+      U_TIPO: withCodigo ? String(this.db.col(row, "U_TIPO") ?? "") : "",
     };
   }
 
@@ -54,22 +62,24 @@ export class ProvHanaRepository implements IProvRepository {
       ? `"U_CODIGO", "U_NIT", "U_RAZON_SOCIAL", "U_TIPO"`
       : `"U_NIT", "U_RAZON_SOCIAL"`;
 
-    let rows: any[];
+    let rows: Record<string, any>[];
     if (wc && tipo) {
       rows = await this.db.query(
         `SELECT ${cols} FROM ${this.DB} WHERE "U_TIPO" = ? ORDER BY "U_RAZON_SOCIAL"`,
         [tipo],
       );
     } else {
-      const order = wc ? `ORDER BY "U_TIPO", "U_RAZON_SOCIAL"` : `ORDER BY "U_RAZON_SOCIAL"`;
+      const order = wc
+        ? `ORDER BY "U_TIPO", "U_RAZON_SOCIAL"`
+        : `ORDER BY "U_RAZON_SOCIAL"`;
       rows = await this.db.query(`SELECT ${cols} FROM ${this.DB} ${order}`);
     }
-    return rows.map(r => this.normalize(r, wc));
+    return rows.map((r) => this.normalize(r, wc));
   }
 
   async findByCodigo(codigo: string): Promise<Prov | null> {
     const wc = await this.hasCodigo();
-    if (!wc) return null;   // tabla sin U_CODIGO — búsqueda por código no aplica
+    if (!wc) return null; // tabla sin U_CODIGO — búsqueda por código no aplica
     const rows = await this.db.query(
       `SELECT "U_CODIGO", "U_NIT", "U_RAZON_SOCIAL", "U_TIPO" FROM ${this.DB} WHERE "U_CODIGO" = ?`,
       [codigo],
@@ -91,28 +101,31 @@ export class ProvHanaRepository implements IProvRepository {
 
   async getNextCodigo(tipo: string): Promise<string> {
     const wc = await this.hasCodigo();
-    if (!wc) return '';   // tabla sin U_CODIGO — no genera código secuencial
+    if (!wc) return ""; // tabla sin U_CODIGO — no genera código secuencial
 
     const prefix = tipo.toUpperCase();
 
-    if (this.dbType === 'POSTGRES') {
-      const row = await this.db.queryOne<any>(
+    if (this.dbType === "POSTGRES") {
+      const row = await this.db.queryOne(
         `SELECT rend_retail.next_prov_codigo($1::varchar) AS "NEXT_CODIGO"`,
         [prefix],
       );
-      return this.db.col(row, 'NEXT_CODIGO');
+      return this.db.col(row, "NEXT_CODIGO");
     }
 
-    const rows = await this.db.query<any>(
+    const rows = await this.db.query(
       `SELECT "U_CODIGO" FROM ${this.DB} WHERE "U_CODIGO" LIKE ? ORDER BY "U_CODIGO" DESC`,
       [`${prefix}%`],
     );
     let maxNum = 0;
     for (const r of rows) {
-      const num = parseInt((this.db.col(r, 'U_CODIGO') as string).substring(2), 10);
+      const num = parseInt(
+        (this.db.col(r, "U_CODIGO") as string).substring(2),
+        10,
+      );
       if (!isNaN(num) && num > maxNum) maxNum = num;
     }
-    return `${prefix}${String(maxNum + 1).padStart(5, '0')}`;
+    return `${prefix}${String(maxNum + 1).padStart(5, "0")}`;
   }
 
   // ── Mutaciones ─────────────────────────────────────────────────────────
@@ -127,14 +140,24 @@ export class ProvHanaRepository implements IProvRepository {
         `INSERT INTO ${this.DB} ("U_CODIGO", "U_NIT", "U_RAZON_SOCIAL", "U_TIPO") VALUES (?, ?, ?, ?)`,
         [codigo, dto.nit, dto.razonSocial, dto.tipo],
       );
-      return { U_CODIGO: codigo, U_NIT: dto.nit, U_RAZON_SOCIAL: dto.razonSocial, U_TIPO: dto.tipo };
+      return {
+        U_CODIGO: codigo,
+        U_NIT: dto.nit,
+        U_RAZON_SOCIAL: dto.razonSocial,
+        U_TIPO: dto.tipo,
+      };
     } else {
       // Schema reducido QA2: solo U_NIT y U_RAZON_SOCIAL
       await this.db.execute(
         `INSERT INTO ${this.DB} ("U_NIT", "U_RAZON_SOCIAL") VALUES (?, ?)`,
         [dto.nit, dto.razonSocial],
       );
-      return { U_CODIGO: '', U_NIT: dto.nit, U_RAZON_SOCIAL: dto.razonSocial, U_TIPO: dto.tipo };
+      return {
+        U_CODIGO: "",
+        U_NIT: dto.nit,
+        U_RAZON_SOCIAL: dto.razonSocial,
+        U_TIPO: dto.tipo,
+      };
     }
   }
 
@@ -145,15 +168,21 @@ export class ProvHanaRepository implements IProvRepository {
     const wc = await this.hasCodigo();
     if (!wc) return { affected: 0 };
 
-    const parts:  string[] = [];
-    const params: any[]    = [];
-    if (data.razonSocial !== undefined) { parts.push('"U_RAZON_SOCIAL" = ?'); params.push(data.razonSocial); }
-    if (data.nit         !== undefined) { parts.push('"U_NIT" = ?');          params.push(data.nit); }
+    const parts: string[] = [];
+    const params: unknown[] = [];
+    if (data.razonSocial !== undefined) {
+      parts.push('"U_RAZON_SOCIAL" = ?');
+      params.push(data.razonSocial);
+    }
+    if (data.nit !== undefined) {
+      parts.push('"U_NIT" = ?');
+      params.push(data.nit);
+    }
     if (!parts.length) return { affected: 0 };
 
     params.push(codigo);
     const affected = await this.db.execute(
-      `UPDATE ${this.DB} SET ${parts.join(', ')} WHERE "U_CODIGO" = ?`,
+      `UPDATE ${this.DB} SET ${parts.join(", ")} WHERE "U_CODIGO" = ?`,
       params,
     );
     return { affected };

@@ -1,5 +1,8 @@
-import { Injectable } from '@nestjs/common';
-import { IRendicionesRepository, CreateRendicionData } from './rendiciones.repository.interface';
+import { Injectable } from "@nestjs/common";
+import {
+  IRendicionesRepository,
+  CreateRendicionData,
+} from "./rendiciones.repository.interface";
 
 /**
  * Implementacion SQL Server del repositorio de rendiciones.
@@ -8,28 +11,28 @@ import { IRendicionesRepository, CreateRendicionData } from './rendiciones.repos
  */
 @Injectable()
 export class RendicionesSqlRepository implements IRendicionesRepository {
-
-  // constructor(private readonly sqlService: SqlService) {}
-
   async findAll(): Promise<any[]> {
-    // return this.sqlService.query('SELECT * FROM dbo.Rendiciones ORDER BY FechaCreacion DESC');
-    throw new Error('SQL Repository no implementado aun. Configura DB_TYPE=HANA');
+    throw new Error(
+      "SQL Repository no implementado aun. Configura DB_TYPE=HANA",
+    );
   }
 
   async findOne(_id: number): Promise<any | null> {
-    // return this.sqlService.query('SELECT * FROM dbo.Rendiciones WHERE Id = @id', [id]);
-    throw new Error('SQL Repository no implementado aun.');
+    throw new Error("SQL Repository no implementado aun.");
   }
 
   async create(_data: CreateRendicionData, _userId: number): Promise<any> {
-    throw new Error('SQL Repository no implementado aun.');
+    throw new Error("SQL Repository no implementado aun.");
   }
 
-  async update(_id: number, _data: Partial<CreateRendicionData>): Promise<{ affected: number }> {
-    throw new Error('SQL Repository no implementado aun.');
+  async update(
+    _id: number,
+    _data: Partial<CreateRendicionData>,
+  ): Promise<{ affected: number }> {
+    throw new Error("SQL Repository no implementado aun.");
   }
 
   async remove(_id: number): Promise<{ affected: number }> {
-    throw new Error('SQL Repository no implementado aun.');
+    throw new Error("SQL Repository no implementado aun.");
   }
 }

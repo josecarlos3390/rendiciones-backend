@@ -4,29 +4,32 @@ import {
   InternalServerErrorException,
   ConflictException,
   NotFoundException,
-} from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import {
   IDatabaseService,
   DATABASE_SERVICE,
-} from '@database/interfaces/database.interface';
-import { IDimensionesRepository } from './dimensiones.repository.interface';
-import { Dimension, DimensionFiltro } from '../interfaces/dimension.interface';
-import { CrearDimensionDto, ActualizarDimensionDto } from '../dto/dimension.dto';
-import { tbl } from '@database/db-table.helper';
+} from "@database/interfaces/database.interface";
+import { IDimensionesRepository } from "./dimensiones.repository.interface";
+import { Dimension, DimensionFiltro } from "../interfaces/dimension.interface";
+import {
+  CrearDimensionDto,
+  ActualizarDimensionDto,
+} from "../dto/dimension.dto";
+import { tbl } from "@database/db-table.helper";
 
 @Injectable()
 export class DimensionesRepository implements IDimensionesRepository {
   private get schema(): string {
-    return this.config.get<string>('hana.schema');
+    return this.config.get<string>("hana.schema");
   }
 
   private get dbType(): string {
-    return this.config.get<string>('app.dbType', 'HANA').toUpperCase();
+    return this.config.get<string>("app.dbType", "HANA").toUpperCase();
   }
 
   private get DB(): string {
-    return tbl(this.schema, 'REND_DIMENSIONES', this.dbType);
+    return tbl(this.schema, "REND_DIMENSIONES", this.dbType);
   }
 
   constructor(
@@ -38,26 +41,27 @@ export class DimensionesRepository implements IDimensionesRepository {
   /**
    * Normaliza una fila de base de datos a la interfaz Dimension
    */
-  private normalize(row: any): Dimension {
+  private normalize(row: Record<string, unknown>): Dimension {
     return {
-      code: Number(this.db.col(row, 'DIM_CODE') ?? 0),
-      name: String(this.db.col(row, 'DIM_NAME') ?? ''),
-      descripcion: String(this.db.col(row, 'DIM_DESCRIPCION') ?? ''),
-      activa: (this.db.col(row, 'DIM_ACTIVA') ?? 'Y') === 'Y',
+      code: Number(this.db.col(row, "DIM_CODE") ?? 0),
+      name: String(this.db.col(row, "DIM_NAME") ?? ""),
+      descripcion: String(this.db.col(row, "DIM_DESCRIPCION") ?? ""),
+      activa: (this.db.col(row, "DIM_ACTIVA") ?? "Y") === "Y",
     };
   }
 
   /**
    * Construye la cláusula WHERE según los filtros
    */
-  private buildWhereClause(
-    filtro?: DimensionFiltro,
-  ): { clause: string; params: any[] } {
+  private buildWhereClause(filtro?: DimensionFiltro): {
+    clause: string;
+    params: unknown[];
+  } {
     const conditions: string[] = [];
-    const params: any[] = [];
+    const params: unknown[] = [];
 
     if (filtro?.code !== undefined) {
-      if (this.dbType === 'POSTGRES') {
+      if (this.dbType === "POSTGRES") {
         conditions.push(`"DIM_CODE" = $${conditions.length + 1}`);
       } else {
         conditions.push(`"DIM_CODE" = ?`);
@@ -66,7 +70,7 @@ export class DimensionesRepository implements IDimensionesRepository {
     }
 
     if (filtro?.name) {
-      if (this.dbType === 'POSTGRES') {
+      if (this.dbType === "POSTGRES") {
         conditions.push(`"DIM_NAME" ILIKE $${conditions.length + 1}`);
       } else {
         conditions.push(`"DIM_NAME" LIKE ?`);
@@ -75,15 +79,16 @@ export class DimensionesRepository implements IDimensionesRepository {
     }
 
     if (filtro?.activa !== undefined) {
-      if (this.dbType === 'POSTGRES') {
+      if (this.dbType === "POSTGRES") {
         conditions.push(`"DIM_ACTIVA" = $${conditions.length + 1}`);
       } else {
         conditions.push(`"DIM_ACTIVA" = ?`);
       }
-      params.push(filtro.activa ? 'Y' : 'N');
+      params.push(filtro.activa ? "Y" : "N");
     }
 
-    const clause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const clause =
+      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     return { clause, params };
   }
 
@@ -91,8 +96,8 @@ export class DimensionesRepository implements IDimensionesRepository {
    * Construye la cláusula ORDER BY
    */
   private buildOrderByClause(
-    sortBy: string = 'code',
-    sortOrder: 'asc' | 'desc' = 'asc',
+    sortBy: string = "code",
+    sortOrder: "asc" | "desc" = "asc",
   ): string {
     const columnMap: Record<string, string> = {
       code: '"DIM_CODE"',
@@ -107,29 +112,32 @@ export class DimensionesRepository implements IDimensionesRepository {
   async findAll(filtro?: DimensionFiltro): Promise<Dimension[]> {
     try {
       const { clause, params } = this.buildWhereClause(filtro);
-      const orderBy = this.buildOrderByClause(filtro?.sortBy, filtro?.sortOrder);
+      const orderBy = this.buildOrderByClause(
+        filtro?.sortBy,
+        filtro?.sortOrder,
+      );
 
       const sql = `SELECT "DIM_CODE", "DIM_NAME", "DIM_DESCRIPCION", "DIM_ACTIVA" FROM ${this.DB} ${clause} ${orderBy}`;
-      const rows = await this.db.query<any>(sql, params);
+      const rows = await this.db.query(sql, params);
 
       return rows.map((r) => this.normalize(r));
-    } catch (err: any) {
+    } catch (err: unknown) {
       throw new InternalServerErrorException(
-        `Error al consultar dimensiones: ${err.message}`,
+        `Error al consultar dimensiones: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
 
   async findByCode(code: number): Promise<Dimension | null> {
     try {
-      const placeholder = this.dbType === 'POSTGRES' ? '$1' : '?';
+      const placeholder = this.dbType === "POSTGRES" ? "$1" : "?";
       const sql = `SELECT "DIM_CODE", "DIM_NAME", "DIM_DESCRIPCION", "DIM_ACTIVA" FROM ${this.DB} WHERE "DIM_CODE" = ${placeholder}`;
-      const rows = await this.db.query<any>(sql, [code]);
+      const rows = await this.db.query(sql, [code]);
 
       return rows[0] ? this.normalize(rows[0]) : null;
-    } catch (err: any) {
+    } catch (err: unknown) {
       throw new InternalServerErrorException(
-        `Error al buscar dimensión: ${err.message}`,
+        `Error al buscar dimensión: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -150,10 +158,10 @@ export class DimensionesRepository implements IDimensionesRepository {
       }
 
       const name = dto.name.trim();
-      const descripcion = dto.descripcion?.trim() ?? '';
-      const activa = dto.activa !== false ? 'Y' : 'N';
+      const descripcion = dto.descripcion?.trim() ?? "";
+      const activa = dto.activa !== false ? "Y" : "N";
 
-      if (this.dbType === 'POSTGRES') {
+      if (this.dbType === "POSTGRES") {
         await this.db.execute(
           `INSERT INTO ${this.DB} ("DIM_CODE", "DIM_NAME", "DIM_DESCRIPCION", "DIM_ACTIVA") VALUES ($1, $2, $3, $4)`,
           [dto.code, name, descripcion, activa],
@@ -171,12 +179,12 @@ export class DimensionesRepository implements IDimensionesRepository {
         descripcion,
         activa: dto.activa !== false,
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof ConflictException) {
         throw err;
       }
       throw new InternalServerErrorException(
-        `Error al crear dimensión: ${err.message}`,
+        `Error al crear dimensión: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -186,14 +194,16 @@ export class DimensionesRepository implements IDimensionesRepository {
       // Verificar que existe
       const existing = await this.findByCode(code);
       if (!existing) {
-        throw new NotFoundException(`Dimensión con código ${code} no encontrada`);
+        throw new NotFoundException(
+          `Dimensión con código ${code} no encontrada`,
+        );
       }
 
       const parts: string[] = [];
-      const params: any[] = [];
+      const params: unknown[] = [];
 
       if (dto.name !== undefined) {
-        if (this.dbType === 'POSTGRES') {
+        if (this.dbType === "POSTGRES") {
           parts.push(`"DIM_NAME" = $${parts.length + 1}`);
         } else {
           parts.push(`"DIM_NAME" = ?`);
@@ -202,7 +212,7 @@ export class DimensionesRepository implements IDimensionesRepository {
       }
 
       if (dto.descripcion !== undefined) {
-        if (this.dbType === 'POSTGRES') {
+        if (this.dbType === "POSTGRES") {
           parts.push(`"DIM_DESCRIPCION" = $${parts.length + 1}`);
         } else {
           parts.push(`"DIM_DESCRIPCION" = ?`);
@@ -211,12 +221,12 @@ export class DimensionesRepository implements IDimensionesRepository {
       }
 
       if (dto.activa !== undefined) {
-        if (this.dbType === 'POSTGRES') {
+        if (this.dbType === "POSTGRES") {
           parts.push(`"DIM_ACTIVA" = $${parts.length + 1}`);
         } else {
           parts.push(`"DIM_ACTIVA" = ?`);
         }
-        params.push(dto.activa ? 'Y' : 'N');
+        params.push(dto.activa ? "Y" : "N");
       }
 
       if (parts.length === 0) {
@@ -225,15 +235,15 @@ export class DimensionesRepository implements IDimensionesRepository {
 
       params.push(code);
 
-      if (this.dbType === 'POSTGRES') {
+      if (this.dbType === "POSTGRES") {
         const placeholder = `$${parts.length}`;
         await this.db.execute(
-          `UPDATE ${this.DB} SET ${parts.join(', ')} WHERE "DIM_CODE" = ${placeholder}`,
+          `UPDATE ${this.DB} SET ${parts.join(", ")} WHERE "DIM_CODE" = ${placeholder}`,
           params,
         );
       } else {
         await this.db.execute(
-          `UPDATE ${this.DB} SET ${parts.join(', ')} WHERE "DIM_CODE" = ?`,
+          `UPDATE ${this.DB} SET ${parts.join(", ")} WHERE "DIM_CODE" = ?`,
           params,
         );
       }
@@ -244,12 +254,12 @@ export class DimensionesRepository implements IDimensionesRepository {
         descripcion: dto.descripcion ?? existing.descripcion,
         activa: dto.activa ?? existing.activa,
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof NotFoundException) {
         throw err;
       }
       throw new InternalServerErrorException(
-        `Error al actualizar dimensión: ${err.message}`,
+        `Error al actualizar dimensión: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -259,22 +269,24 @@ export class DimensionesRepository implements IDimensionesRepository {
       // Verificar que existe
       const existing = await this.findByCode(code);
       if (!existing) {
-        throw new NotFoundException(`Dimensión con código ${code} no encontrada`);
+        throw new NotFoundException(
+          `Dimensión con código ${code} no encontrada`,
+        );
       }
 
-      const placeholder = this.dbType === 'POSTGRES' ? '$1' : '?';
+      const placeholder = this.dbType === "POSTGRES" ? "$1" : "?";
       const result = await this.db.execute(
         `DELETE FROM ${this.DB} WHERE "DIM_CODE" = ${placeholder}`,
         [code],
       );
 
       return { affected: result ?? 1 };
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof NotFoundException) {
         throw err;
       }
       throw new InternalServerErrorException(
-        `Error al eliminar dimensión: ${err.message}`,
+        `Error al eliminar dimensión: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }

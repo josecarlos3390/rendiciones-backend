@@ -1,26 +1,39 @@
+﻿import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  ParseIntPipe,
+  Req,
+} from "@nestjs/common";
 import {
-  Controller, Get, Post, Patch, Delete,
-  Body, Param, ParseIntPipe, Req,
-} from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { RendDService }    from './rend-d.service';
-import { CreateRendDDto }  from './dto/create-rend-d.dto';
-import { UpdateRendDDto }  from './dto/update-rend-d.dto';
-import { Roles }           from '../../auth/decorators/roles.decorator';
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+} from "@nestjs/swagger";
+import type { RequestWithUser } from "@common/types";
+import { RendDService } from "./rend-d.service";
+import { CreateRendDDto } from "./dto/create-rend-d.dto";
+import { UpdateRendDDto } from "./dto/update-rend-d.dto";
+import { Roles } from "../../auth/decorators/roles.decorator";
 
-@ApiTags('Rendiciones-D')
+@ApiTags("Rendiciones-D")
 @ApiBearerAuth()
-@Controller('rend-m/:idRendicion/detalle')
+@Controller("rend-m/:idRendicion/detalle")
 export class RendDController {
   constructor(private readonly rendDService: RendDService) {}
 
   @Get()
-  @Roles('ADMIN', 'USER')
-  @ApiOperation({ summary: 'Listar documentos de una rendición' })
-  @ApiResponse({ status: 200, description: 'Lista de documentos REND_D' })
+  @Roles("ADMIN", "USER")
+  @ApiOperation({ summary: "Listar documentos de una rendiciÃ³n" })
+  @ApiResponse({ status: 200, description: "Lista de documentos REND_D" })
   findAll(
-    @Param('idRendicion', ParseIntPipe) idRendicion: number,
-    @Req() req: any,
+    @Param("idRendicion", ParseIntPipe) idRendicion: number,
+    @Req() req: RequestWithUser,
   ) {
     return this.rendDService.findByRendicion(
       idRendicion,
@@ -28,36 +41,37 @@ export class RendDController {
       String(req.user.sub),
       req.user.username,
       req.user.esAprobador === true,
-      req.user.nomSup === '' || !req.user.nomSup,   // sinAprobador
+      req.user.nomSup === "" || !req.user.nomSup, // sinAprobador
     );
   }
 
-  @Get(':idRD')
-  @Roles('ADMIN', 'USER')
-  @ApiOperation({ summary: 'Obtener documento por ID' })
+  @Get(":idRD")
+  @Roles("ADMIN", "USER")
+  @ApiOperation({ summary: "Obtener documento por ID" })
   findOne(
-    @Param('idRendicion', ParseIntPipe) idRendicion: number,
-    @Param('idRD', ParseIntPipe) idRD: number,
-    @Req() req: any,
+    @Param("idRendicion", ParseIntPipe) idRendicion: number,
+    @Param("idRD", ParseIntPipe) idRD: number,
+    @Req() req: RequestWithUser,
   ) {
     return this.rendDService.findOne(
-      idRendicion, idRD,
+      idRendicion,
+      idRD,
       req.user.role,
       String(req.user.sub),
       req.user.username,
       req.user.esAprobador === true,
-      req.user.nomSup === '' || !req.user.nomSup,
+      req.user.nomSup === "" || !req.user.nomSup,
     );
   }
 
   @Post()
-  @Roles('ADMIN', 'USER')
-  @ApiOperation({ summary: 'Agregar documento a una rendición' })
-  @ApiResponse({ status: 201, description: 'Documento creado' })
+  @Roles("ADMIN", "USER")
+  @ApiOperation({ summary: "Agregar documento a una rendiciÃ³n" })
+  @ApiResponse({ status: 201, description: "Documento creado" })
   create(
-    @Param('idRendicion', ParseIntPipe) idRendicion: number,
+    @Param("idRendicion", ParseIntPipe) idRendicion: number,
     @Body() dto: CreateRendDDto,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
   ) {
     return this.rendDService.create(
       idRendicion,
@@ -70,17 +84,19 @@ export class RendDController {
     );
   }
 
-  @Patch(':idRD')
-  @Roles('ADMIN', 'USER')
-  @ApiOperation({ summary: 'Editar documento' })
+  @Patch(":idRD")
+  @Roles("ADMIN", "USER")
+  @ApiOperation({ summary: "Editar documento" })
   update(
-    @Param('idRendicion', ParseIntPipe) idRendicion: number,
-    @Param('idRD', ParseIntPipe) idRD: number,
+    @Param("idRendicion", ParseIntPipe) idRendicion: number,
+    @Param("idRD", ParseIntPipe) idRD: number,
     @Body() dto: UpdateRendDDto,
-    @Req() req: any,
+    @Req() req: RequestWithUser,
   ) {
     return this.rendDService.update(
-      idRendicion, idRD, dto,
+      idRendicion,
+      idRD,
+      dto,
       req.user.role,
       String(req.user.sub),
       req.user.username,
@@ -88,16 +104,17 @@ export class RendDController {
     );
   }
 
-  @Delete(':idRD')
-  @Roles('ADMIN', 'USER')
-  @ApiOperation({ summary: 'Eliminar documento' })
+  @Delete(":idRD")
+  @Roles("ADMIN", "USER")
+  @ApiOperation({ summary: "Eliminar documento" })
   remove(
-    @Param('idRendicion', ParseIntPipe) idRendicion: number,
-    @Param('idRD', ParseIntPipe) idRD: number,
-    @Req() req: any,
+    @Param("idRendicion", ParseIntPipe) idRendicion: number,
+    @Param("idRD", ParseIntPipe) idRD: number,
+    @Req() req: RequestWithUser,
   ) {
     return this.rendDService.remove(
-      idRendicion, idRD,
+      idRendicion,
+      idRD,
       req.user.role,
       String(req.user.sub),
       req.user.username,

@@ -6,42 +6,52 @@ import {
   ForbiddenException,
   BadRequestException,
   InternalServerErrorException,
-} from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import * as fs from 'fs';
-import * as path from 'path';
-import { v4 as uuidv4 } from 'uuid';
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import * as fs from "fs";
+import * as path from "path";
+import { v4 as uuidv4 } from "uuid";
 import {
   IAdjuntosRepository,
   ADJUNTOS_REPOSITORY,
-} from './repositories/adjuntos.repository.interface';
-import { Adjunto, AdjuntoInfo } from './interfaces/adjunto.interface';
-import { CreateAdjuntoDto } from './dto/create-adjunto.dto';
+} from "./repositories/adjuntos.repository.interface";
+import {
+  Adjunto,
+  AdjuntoInfo,
+  UploadedFileData,
+} from "./interfaces/adjunto.interface";
+import { CreateAdjuntoDto } from "./dto/create-adjunto.dto";
 
 // Lista blanca de extensiones permitidas
 const ALLOWED_EXTENSIONS = [
-  '.pdf', '.jpg', '.jpeg', '.png', 
-  '.doc', '.docx', '.xls', '.xlsx'
+  ".pdf",
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
 ] as const;
 
 // Magic numbers para verificación de archivo
 const FILE_SIGNATURES: Record<string, Buffer[]> = {
-  'application/pdf': [Buffer.from([0x25, 0x50, 0x44, 0x46])], // %PDF
-  'image/jpeg': [
-    Buffer.from([0xFF, 0xD8, 0xFF]), // JPEG
+  "application/pdf": [Buffer.from([0x25, 0x50, 0x44, 0x46])], // %PDF
+  "image/jpeg": [
+    Buffer.from([0xff, 0xd8, 0xff]), // JPEG
   ],
-  'image/png': [Buffer.from([0x89, 0x50, 0x4E, 0x47])], // PNG
-  'application/msword': [Buffer.from([0xD0, 0xCF, 0x11, 0xE0])], // DOC
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': [
-    Buffer.from([0x50, 0x4B, 0x03, 0x04]), // DOCX (ZIP)
+  "image/png": [Buffer.from([0x89, 0x50, 0x4e, 0x47])], // PNG
+  "application/msword": [Buffer.from([0xd0, 0xcf, 0x11, 0xe0])], // DOC
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [
+    Buffer.from([0x50, 0x4b, 0x03, 0x04]), // DOCX (ZIP)
   ],
-  'application/vnd.ms-excel': [Buffer.from([0xD0, 0xCF, 0x11, 0xE0])], // XLS
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
-    Buffer.from([0x50, 0x4B, 0x03, 0x04]), // XLSX (ZIP)
+  "application/vnd.ms-excel": [Buffer.from([0xd0, 0xcf, 0x11, 0xe0])], // XLS
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [
+    Buffer.from([0x50, 0x4b, 0x03, 0x04]), // XLSX (ZIP)
   ],
 };
 
-type AllowedExtension = typeof ALLOWED_EXTENSIONS[number];
+type AllowedExtension = (typeof ALLOWED_EXTENSIONS)[number];
 
 interface FileValidationResult {
   valid: boolean;
@@ -62,11 +72,17 @@ export class AdjuntosService {
     private readonly repository: IAdjuntosRepository,
     private readonly config: ConfigService,
   ) {
-    this.uploadDir = this.config.get<string>('upload.dir', './uploads');
-    this.maxFileSize = this.config.get<number>('upload.maxSize', 10 * 1024 * 1024); // 10MB default
-    this.allowedMimeTypes = this.config.get<string>('upload.allowedTypes', 
-      'application/pdf,image/jpeg,image/png,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    ).split(',');
+    this.uploadDir = this.config.get<string>("upload.dir", "./uploads");
+    this.maxFileSize = this.config.get<number>(
+      "upload.maxSize",
+      10 * 1024 * 1024,
+    ); // 10MB default
+    this.allowedMimeTypes = this.config
+      .get<string>(
+        "upload.allowedTypes",
+        "application/pdf,image/jpeg,image/png,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      )
+      .split(",");
   }
 
   /**
@@ -74,13 +90,13 @@ export class AdjuntosService {
    */
   private validarExtension(originalname: string): FileValidationResult {
     const ext = path.extname(originalname).toLowerCase() as AllowedExtension;
-    
+
     if (!ALLOWED_EXTENSIONS.includes(ext)) {
       return {
         valid: false,
         extension: null,
         realMimetype: null,
-        error: `Extensión no permitida: ${ext}. Extensiones permitidas: ${ALLOWED_EXTENSIONS.join(', ')}`,
+        error: `Extensión no permitida: ${ext}. Extensiones permitidas: ${ALLOWED_EXTENSIONS.join(", ")}`,
       };
     }
 
@@ -108,7 +124,7 @@ export class AdjuntosService {
    * Valida el contenido real del archivo contra su MIME type declarado
    */
   private validarContenidoArchivo(
-    buffer: Buffer, 
+    buffer: Buffer,
     declaredMimetype: string,
   ): FileValidationResult {
     const realMimetype = this.detectarMimeReal(buffer);
@@ -118,17 +134,20 @@ export class AdjuntosService {
         valid: false,
         extension: null,
         realMimetype: null,
-        error: 'No se pudo detectar el tipo de archivo o formato no soportado',
+        error: "No se pudo detectar el tipo de archivo o formato no soportado",
       };
     }
 
     // Para archivos ZIP-based (DOCX, XLSX), verificamos que sea ZIP
     const zipBasedTypes = [
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ];
 
-    if (zipBasedTypes.includes(declaredMimetype) && realMimetype === 'application/zip') {
+    if (
+      zipBasedTypes.includes(declaredMimetype) &&
+      realMimetype === "application/zip"
+    ) {
       // Es válido - DOCX/XLSX son archivos ZIP
       return { valid: true, extension: null, realMimetype };
     }
@@ -151,11 +170,14 @@ export class AdjuntosService {
    */
   private sanitizarNombre(originalname: string): string {
     // Eliminar caracteres peligrosos y path traversal
-    return originalname
-      .replace(/[<>:"|?*\x00-\x1f]/g, '') // Caracteres inválidos en Windows/Unix
-      .replace(/\.\./g, '') // Path traversal
-      .replace(/^\.+/, '') // Puntos al inicio
-      .substring(0, 255); // Límite de longitud
+    return (
+      originalname
+        // eslint-disable-next-line no-control-regex
+        .replace(/[<>:"|?*\x00-\x1f]/g, "") // Caracteres inválidos en Windows/Unix
+        .replace(/\.\./g, "") // Path traversal
+        .replace(/^\.+/, "") // Puntos al inicio
+        .substring(0, 255)
+    ); // Límite de longitud
   }
 
   /**
@@ -175,10 +197,14 @@ export class AdjuntosService {
   /**
    * Genera la ruta de almacenamiento para un archivo
    */
-  private generarRuta(idRendicion: number, idRD: number, nombreSys: string): string {
+  private generarRuta(
+    idRendicion: number,
+    idRD: number,
+    nombreSys: string,
+  ): string {
     return path.join(
       this.uploadDir,
-      'rendiciones',
+      "rendiciones",
       String(idRendicion),
       String(idRD),
       nombreSys,
@@ -220,7 +246,7 @@ export class AdjuntosService {
    * Sube un archivo y crea el registro en BD
    */
   async upload(
-    file: any,
+    file: UploadedFileData,
     idRendicion: number,
     idRD: number,
     idUsuario: string,
@@ -235,7 +261,7 @@ export class AdjuntosService {
     // 2. Validar tipo MIME declarado
     if (!this.validarTipo(file.mimetype)) {
       throw new BadRequestException(
-        `Tipo de archivo no permitido: ${file.mimetype}. Tipos permitidos: ${this.allowedMimeTypes.join(', ')}`,
+        `Tipo de archivo no permitido: ${file.mimetype}. Tipos permitidos: ${this.allowedMimeTypes.join(", ")}`,
       );
     }
 
@@ -247,12 +273,15 @@ export class AdjuntosService {
     }
 
     // 4. Validar contenido real del archivo (anti-spoofing)
-    const contentValidation = this.validarContenidoArchivo(file.buffer, file.mimetype);
+    const contentValidation = this.validarContenidoArchivo(
+      file.buffer,
+      file.mimetype,
+    );
     if (!contentValidation.valid) {
       this.logger.warn(
         `Intento de subida de archivo sospechoso: ${file.originalname} ` +
-        `(declarado: ${file.mimetype}, real: ${contentValidation.realMimetype}) ` +
-        `por usuario ${idUsuario}`
+          `(declarado: ${file.mimetype}, real: ${contentValidation.realMimetype}) ` +
+          `por usuario ${idUsuario}`,
       );
       throw new BadRequestException(contentValidation.error);
     }
@@ -260,7 +289,7 @@ export class AdjuntosService {
     // 5. Sanitizar nombre original
     const nombreSanitizado = this.sanitizarNombre(file.originalname);
     if (!nombreSanitizado || nombreSanitizado.length < 3) {
-      throw new BadRequestException('Nombre de archivo inválido');
+      throw new BadRequestException("Nombre de archivo inválido");
     }
 
     // Generar nombre único
@@ -301,13 +330,13 @@ export class AdjuntosService {
         descripcion: adjunto.descripcion,
         fecha: adjunto.fecha,
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Limpiar archivo si falló
       if (fs.existsSync(ruta)) {
         fs.unlinkSync(ruta);
       }
       throw new InternalServerErrorException(
-        `Error al guardar archivo: ${err.message}`,
+        `Error al guardar archivo: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -320,7 +349,7 @@ export class AdjuntosService {
     const rutaCompleta = path.join(this.uploadDir, adjunto.ruta);
 
     if (!fs.existsSync(rutaCompleta)) {
-      throw new NotFoundException('Archivo no encontrado en el servidor');
+      throw new NotFoundException("Archivo no encontrado en el servidor");
     }
 
     const buffer = fs.readFileSync(rutaCompleta);
@@ -340,7 +369,7 @@ export class AdjuntosService {
     // Solo el dueño o ADMIN pueden eliminar
     if (adjunto.idUsuario !== idUsuario && !isAdmin) {
       throw new ForbiddenException(
-        'No tenés permisos para eliminar este archivo',
+        "No tenés permisos para eliminar este archivo",
       );
     }
 
@@ -361,7 +390,9 @@ export class AdjuntosService {
    * Elimina todos los adjuntos de una rendición (incluyendo archivos físicos).
    * Usado por el servicio de RendM para borrado en cascada.
    */
-  async removeByRendicion(idRendicion: number): Promise<{ affected: number; errores: string[] }> {
+  async removeByRendicion(
+    idRendicion: number,
+  ): Promise<{ affected: number; errores: string[] }> {
     const adjuntos = await this.repository.findByRendicion(idRendicion);
     let affected = 0;
     const errores: string[] = [];
@@ -377,15 +408,23 @@ export class AdjuntosService {
         // Eliminar registro de BD
         await this.repository.remove(adjunto.id);
         affected++;
-      } catch (err: any) {
-        this.logger.error(`Error al eliminar adjunto ${adjunto.id}: ${err.message}`);
-        errores.push(`Adjunto ${adjunto.id}: ${err.message}`);
+      } catch (err: unknown) {
+        this.logger.error(
+          `Error al eliminar adjunto ${adjunto.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        errores.push(
+          `Adjunto ${adjunto.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
 
     // Intentar eliminar el directorio de la rendición si está vacío
     try {
-      const rendicionDir = path.join(this.uploadDir, 'rendiciones', String(idRendicion));
+      const rendicionDir = path.join(
+        this.uploadDir,
+        "rendiciones",
+        String(idRendicion),
+      );
       if (fs.existsSync(rendicionDir)) {
         fs.rmdirSync(rendicionDir, { recursive: true });
       }
@@ -393,7 +432,9 @@ export class AdjuntosService {
       // Ignorar errores al eliminar directorio (puede tener archivos de otras líneas)
     }
 
-    this.logger.log(`Eliminados ${affected} adjuntos de la rendición ${idRendicion}`);
+    this.logger.log(
+      `Eliminados ${affected} adjuntos de la rendición ${idRendicion}`,
+    );
     return { affected, errores };
   }
 }

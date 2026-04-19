@@ -1,14 +1,15 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { IntegracionService } from './integracion.service';
-import { INTEGRACION_REPOSITORY } from './repositories/integracion.repository.interface';
-import { RendMService } from '../rend-m/rend-m.service';
-import { RendDService } from '../rend-d/rend-d.service';
-import { SapSlService } from './sap-sl.service';
-import { PrctjHanaRepository } from '../prctj/repositories/prctj.hana.repository';
-import { ConfigService } from '@nestjs/config';
-import { TipoCambioService } from '../tipo-cambio/tipo-cambio.service';
+import { Test, TestingModule } from "@nestjs/testing";
+import { IntegracionService } from "./integracion.service";
+import { INTEGRACION_REPOSITORY } from "./repositories/integracion.repository.interface";
+import { RendMService } from "../rend-m/rend-m.service";
+import { RendDService } from "../rend-d/rend-d.service";
+import { SapSlService } from "./sap-sl.service";
+import { PRCTJ_REPOSITORY } from "../prctj/repositories/prctj.repository.interface";
+import { REND_CMP_REPOSITORY } from "../rend-cmp/repositories/rend-cmp.repository.interface";
+import { ConfigService } from "@nestjs/config";
+import { TipoCambioService } from "../tipo-cambio/tipo-cambio.service";
 
-describe('IntegracionService', () => {
+describe("IntegracionService", () => {
   let service: IntegracionService;
 
   const mockRepo = {
@@ -47,6 +48,10 @@ describe('IntegracionService', () => {
     obtenerTasa: jest.fn(),
   };
 
+  const mockRendCmpRepo = {
+    findByRendicion: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -68,7 +73,7 @@ describe('IntegracionService', () => {
           useValue: mockSapSlService,
         },
         {
-          provide: PrctjHanaRepository,
+          provide: PRCTJ_REPOSITORY,
           useValue: mockPrctjRepo,
         },
         {
@@ -79,13 +84,17 @@ describe('IntegracionService', () => {
           provide: TipoCambioService,
           useValue: mockTipoCambioService,
         },
+        {
+          provide: REND_CMP_REPOSITORY,
+          useValue: mockRendCmpRepo,
+        },
       ],
     }).compile();
 
     service = module.get<IntegracionService>(IntegracionService);
   });
 
-  it('should be defined', () => {
+  it("should be defined", () => {
     expect(service).toBeDefined();
   });
 });
